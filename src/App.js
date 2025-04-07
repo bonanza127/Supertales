@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-// import { Heart } from 'lucide-react'; // ハートアイコンを使う場合はこちらを有効化
-import * as Tone from 'tone';
+import { Heart } from 'lucide-react';
+// ★ Tone.js のインポート方法を変更
+import { Synth, Sequence, Transport, start, context, now } from 'tone';
 
 // ============================================================================
 // --- 定数定義 (Constants) ---
@@ -12,7 +13,7 @@ const PLAYER_SPEED = 150; // ピクセル/秒
 const INITIAL_HP = 100;
 const SPAWN_INTERVAL = 400; // ms
 const BONE_SPEED = 4 * 60; // ピクセル/秒
-const DAMAGE_AMOUNT = 5; // 基本ダメージ量
+const DAMAGE_AMOUNT = 10; // ダメージ量 10 に戻す
 const BOUNDARY_DAMAGE_INTERVAL = 500; // ms
 const TYPEWRITER_SPEED = 50; // ms
 const DELAY_BETWEEN_LINES = 700; // ms
@@ -21,11 +22,7 @@ const BATTLE_DURATION_SECONDS = 90; // 戦闘時間 (秒)
 const GASTER_WARN_DURATION = 800; // ms 警告時間
 const GASTER_BEAM_DURATION = 250; // ms ビーム持続時間
 const GASTER_WIDTH = 30; // ビームの幅（または高さ）
-
-// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
-// ★ 必ず、以下の YOUR_UPLOADED_IMAGE_URL_HERE を実際の画像のURLに置き換えてください ★
-// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
-const PLAYER_IMAGE_URL = "https://i.imgur.com/DN1tHyO.png"; // 例: "https://.../your-image.png"
+const INVINCIBILITY_DURATION = 600; // 無敵時間 (ms)
 
 // --- 攻撃パターン定義 ---
 const ATTACK_PATTERNS = [
@@ -59,58 +56,22 @@ const getInitialState = () => ({
     attacks: [],
     isOutsideBounds: false,
     battleTimeRemaining: BATTLE_DURATION_SECONDS,
+    isInvincible: false,
 });
 
-// ============================================================================
-// --- エラーバウンダリコンポーネント (Error Boundary) ---
-// ============================================================================
-class ErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false, error: null, errorInfo: null };
-  }
+// --- エラーバウンダリコンポーネント ---
+class ErrorBoundary extends React.Component { /* ... (変更なし) ... */
+  constructor(props) { super(props); this.state = { hasError: false, error: null, errorInfo: null }; }
   static getDerivedStateFromError(error) { return { hasError: true, error: error }; }
   componentDidCatch(error, errorInfo) { console.error("Uncaught error:", error, errorInfo); this.setState({ errorInfo: errorInfo }); }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="text-white bg-red-800 p-4 rounded-lg text-center">
-          <h1 className="text-2xl font-bold mb-2">エラーが発生しました。</h1>
-          <p className="mb-1">申し訳ありませんが、ゲームの描画中に問題が発生しました。</p>
-          <p className="text-sm text-red-200 mb-2">詳細: {this.state.error?.toString()}</p>
-           <button onClick={() => this.setState({ hasError: false, error: null, errorInfo: null })} className="mt-4 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">リセットして再試行</button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
+  render() { if (this.state.hasError) { return ( <div className="text-white bg-red-800 p-4 rounded-lg text-center"> <h1 className="text-2xl font-bold mb-2">エラーが発生しました。</h1> <p className="mb-1">申し訳ありませんが、ゲームの描画中に問題が発生しました。</p> <p className="text-sm text-red-200 mb-2">詳細: {this.state.error?.toString()}</p> <button onClick={() => this.setState({ hasError: false, error: null, errorInfo: null })} className="mt-4 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">リセットして再試行</button> </div> ); } return this.props.children; }
 }
 
 // ============================================================================
 // --- UI サブコンポーネント定義 (UI Sub-Components) ---
 // ============================================================================
-
-// --- プレイヤー表示 ---
-const Player = React.memo(({ position }) => {
-    return (
-       <img
-           src={PLAYER_IMAGE_URL} // ★ 定数を使用
-           alt="Player"
-           className="absolute"
-           style={{
-               left: `${position.x}px`,
-               top: `${position.y}px`,
-               width: `${PLAYER_SIZE}px`,
-               height: `${PLAYER_SIZE}px`,
-               objectFit: 'contain',
-           }}
-           onError={(e) => { e.target.onerror = null; e.target.style.display='none'; }}
-       />
-    );
-});
-
-// --- 攻撃オブジェクト表示 ---
-const AttackRenderer = React.memo(({ attack }) => {
+const Player = React.memo(({ position, isInvincible }) => ( <Heart className={`absolute text-red-500 fill-current ${isInvincible ? 'player-invincible' : ''}`} style={{ left: `${position.x}px`, top: `${position.y}px`, width: `${PLAYER_SIZE}px`, height: `${PLAYER_SIZE}px` }} /> ));
+const AttackRenderer = React.memo(({ attack }) => { /* ... (変更なし) ... */
     switch(attack.type) {
         case 'gaster_warning': return <div key={attack.id} className="gaster-warning" style={{ left: `${attack.x}px`, top: `${attack.y}px`, width: `${attack.width}px`, height: `${attack.height}px` }}></div>;
         case 'gaster_beam': return <div key={attack.id} className="gaster-beam" style={{ left: `${attack.x}px`, top: `${attack.y}px`, width: `${attack.width}px`, height: `${attack.height}px` }}></div>;
@@ -118,24 +79,12 @@ const AttackRenderer = React.memo(({ attack }) => {
         default: return null;
     }
 });
-
-// --- ダイアログボックス表示 ---
 const DialogueBox = React.memo(({ text, show }) => ( <div className="dialogue-container" style={{ opacity: show ? 1 : 0, pointerEvents: show ? 'auto' : 'none' }}> <div className="dialogue-box"> <p>{text}</p> </div> </div> ));
-
-// --- ゲームオーバー画面 ---
 const GameOverScreen = React.memo(({ onRestart }) => ( <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-85 z-10"> <p className="text-4xl text-red-500 font-bold mb-4">GAME OVER</p> <button onClick={onRestart} className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-md text-xl shadow-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-300"> RESTART </button> </div> ));
-
-// --- アクションボタン ---
 const ActionButtons = React.memo(({ disabled }) => ( <div className="mt-6 flex space-x-4"> {['たたかう', 'こうどう', 'アイテム', 'みのがす'].map((label) => ( <button key={label} className="bg-orange-500 hover:bg-orange-600 text-black font-bold py-3 px-6 rounded-md text-xl shadow-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-orange-300 disabled:opacity-50 disabled:cursor-not-allowed" disabled={disabled} onClick={() => console.log(`${label} clicked`)}> {label} </button> ))} </div> ));
-
-// --- UI要素（HPバー、タイマーなど） ---
 const UIElements = React.memo(({ hp, currentAttackName, attackTimer, battleTimeRemaining, isBattle }) => ( <div className="mt-4 flex justify-between w-full px-4" style={{ maxWidth: `${BATTLE_BOX_WIDTH + 200}px` }}> <div className="flex items-center"> <span className="mr-2 text-yellow-400 font-bold">HP</span> <div className="w-24 h-4 bg-gray-700 border border-white rounded-sm overflow-hidden"> <div className="h-full bg-yellow-400 transition-width duration-300 ease-linear" style={{ width: `${Math.max(0, hp)}%` }}></div> </div> <span className="ml-2 text-white">{Math.max(0, hp)}/{INITIAL_HP}</span> </div> {isBattle && ( <div className="text-right text-sm"> <p>攻撃: {currentAttackName || '---'}</p> <p>次まで: {attackTimer}s</p> <p className="mt-1">残り時間: {battleTimeRemaining}s</p> </div> )} </div> ));
-
-// --- 敵キャラクター表示 ---
 const EnemyCharacter = React.memo(() => ( <img src={ENEMY_IMAGE_URL} alt="敵キャラクター" className="w-24 h-24 md:w-32 md:h-32 object-contain pixelated" onError={(e) => { e.target.onerror = null; e.target.src="https://placehold.co/100x100/000000/FF0000?text=画像読込失敗"; }} /> ));
-
-// --- 開始画面 ---
-const PreloadScreen = React.memo(({ onStart }) => ( <div className="text-center"> <img src={ENEMY_IMAGE_URL} alt="敵キャラクター" className="w-32 h-32 object-contain pixelated mx-auto mb-4" onError={(e) => { e.target.onerror = null; e.target.src="https://placehold.co/100x100/000000/FF0000?text=画像読込失敗"; }} /> <h1 className="text-2xl mb-4">Undertale 風 バトル</h1> <button onClick={onStart} className="bg-yellow-400 hover:bg-yellow-500 text-black font-bold py-3 px-8 rounded-md text-2xl shadow-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-yellow-300"> クリックして開始 </button> <p className="mt-4 text-sm text-gray-400">(クリックでオーディオを開始し、ゲームを始めます)</p> <p className="mt-2 text-xs text-gray-500"> ★ BGMが鳴ります ★<br/> ★ Requires: Tailwind, Tone.js, Lucide-React ★ </p> </div> ));
+const PreloadScreen = React.memo(({ onStart }) => ( <div className="text-center"> <img src={ENEMY_IMAGE_URL} alt="敵キャラクター" className="w-32 h-32 object-contain pixelated mx-auto mb-4" onError={(e) => { e.target.onerror = null; e.target.src="https://placehold.co/100x100/000000/FF0000?text=画像読込失敗"; }} /> <h1 className="text-4xl mb-6 game-title">SUPER TALE</h1> <button onClick={onStart} className="bg-yellow-400 hover:bg-yellow-500 text-black font-bold py-3 px-8 rounded-md text-2xl shadow-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-yellow-300"> クリックして開始 </button> <p className="mt-4 text-sm text-gray-400">(クリックでオーディオを開始し、ゲームを始めます)</p> <p className="mt-2 text-xs text-gray-500"> ★ BGMが鳴ります ★<br/> ★ Requires: Tailwind, Tone.js, Lucide-React ★ </p> </div> ));
 
 // ============================================================================
 // --- メインアプリケーションコンポーネント (Main App Component) ---
@@ -143,13 +92,14 @@ const PreloadScreen = React.memo(({ onStart }) => ( <div className="text-center"
 const App = () => {
   // --- State & Refs ---
   const [gameState, setGameState] = useState(getInitialState());
-  const { gamePhase, showDialogue, displayedDialogue, currentLineIndex, battlePlayerPosition, hp, currentAttackPatternIndex, attackTimer, attacks, isOutsideBounds, battleTimeRemaining } = gameState;
+  const { gamePhase, showDialogue, displayedDialogue, currentLineIndex, battlePlayerPosition, hp, currentAttackPatternIndex, attackTimer, attacks, isOutsideBounds, battleTimeRemaining, isInvincible } = gameState;
   const currentAttack = ATTACK_PATTERNS[currentAttackPatternIndex] ?? null;
   const requestRef = useRef(); const lastUpdateTimeRef = useRef(0); const pressedKeys = useRef({});
   const spawnIntervalRef = useRef(null); const nextPatternTimeoutRef = useRef(null); const attackTimerIntervalRef = useRef(null); const boundaryDamageTimerRef = useRef(null);
   const typewriterIntervalRef = useRef(null); const nextLineTimeoutRef = useRef(null);
   const synthRef = useRef(null); const bgmLoopRef = useRef(null); const typingSynthRef = useRef(null); const toneStarted = useRef(false);
   const gamePhaseRef = useRef(gamePhase); const battleBoxRef = useRef(null); const playerPositionRef = useRef(gameState.battlePlayerPosition); const playerHitInLastFrame = useRef(false); const battleTimerIntervalRef = useRef(null);
+  const invincibilityTimerRef = useRef(null);
 
   // --- Core Logic Callbacks (Memoized) ---
 
@@ -158,7 +108,7 @@ const App = () => {
   useEffect(() => { playerPositionRef.current = battlePlayerPosition; }, [battlePlayerPosition]);
 
   // Collision Detection
-  const checkBattleCollision = useCallback((player, attack) => {
+  const checkBattleCollision = useCallback((player, attack) => { /* ... (変更なし) ... */
     if (attack.type === 'gaster_warning') return false;
     const playerRect = { left: player.x, right: player.x + PLAYER_SIZE, top: player.y, bottom: player.y + PLAYER_SIZE };
     let attackRect = { left: attack.x, right: attack.x + attack.width, top: attack.y, bottom: attack.y + attack.height };
@@ -166,19 +116,23 @@ const App = () => {
     return playerRect.left < attackRect.right - tolerance && playerRect.right > attackRect.left + tolerance && playerRect.top < attackRect.bottom - tolerance && playerRect.bottom > attackRect.top + tolerance;
    }, []);
 
+   // 無敵状態解除関数
+   const endInvincibility = useCallback(() => { setGameState(prev => ({ ...prev, isInvincible: false })); invincibilityTimerRef.current = null; }, []);
+
   // Apply Damage
-   const applyDamage = useCallback((amount) => {
+   const applyDamage = useCallback((amount) => { /* ... (変更なし) ... */
         setGameState(prev => {
-            if (prev.hp <= 0 || (prev.gamePhase !== GamePhase.BATTLE && prev.gamePhase !== GamePhase.DIALOGUE)) return prev;
+            if (prev.isInvincible || prev.hp <= 0 || (prev.gamePhase !== GamePhase.BATTLE && prev.gamePhase !== GamePhase.DIALOGUE)) return prev;
             const newHp = Math.max(0, prev.hp - amount);
             let nextPhase = prev.gamePhase;
-            if (newHp <= 0 && prev.hp > 0 && prev.gamePhase === GamePhase.BATTLE) { console.log("HPが0になりました。ゲームオーバーへ移行します。"); nextPhase = GamePhase.GAMEOVER; }
-            return { ...prev, hp: newHp, gamePhase: nextPhase };
+            let shouldBeInvincible = false;
+            if (newHp < prev.hp) { console.log("ダメージ適用！ HP:", prev.hp, "->", newHp); shouldBeInvincible = true; if (newHp <= 0 && prev.gamePhase === GamePhase.BATTLE) { console.log("HPが0になりました。ゲームオーバーへ移行します。"); nextPhase = GamePhase.GAMEOVER; } clearTimeout(invincibilityTimerRef.current); invincibilityTimerRef.current = setTimeout(endInvincibility, INVINCIBILITY_DURATION); }
+            return { ...prev, hp: newHp, gamePhase: nextPhase, isInvincible: shouldBeInvincible };
         });
-   }, []);
+   }, [endInvincibility]);
 
   // Spawn Attack
-   const spawnAttack = useCallback(() => {
+   const spawnAttack = useCallback(() => { /* ... (変更なし) ... */
         if (gamePhaseRef.current !== GamePhase.BATTLE) return;
         setGameState(prev => {
             const currentPattern = ATTACK_PATTERNS[prev.currentAttackPatternIndex];
@@ -186,7 +140,7 @@ const App = () => {
             let newAttacksToAdd = []; const idBase = Date.now() + Math.random();
             switch (currentPattern.type) {
                 case 'BONES_HORIZONTAL': { const y = Math.random() * (BATTLE_BOX_HEIGHT - 10); const d = Math.random() < 0.5 ? 'l' : 'r'; newAttacksToAdd.push({ id: idBase, type: 'bone', x: d === 'l' ? -60 : BATTLE_BOX_WIDTH, y, width: 60, height: 10, speed: BONE_SPEED * (d === 'l' ? 1 : -1), color: 'white' }); break; }
-                case 'BONES_RISING': { const x = Math.random() * (BATTLE_BOX_WIDTH - 10); newAttacksToAdd.push({ id: idBase, type: 'bone_v', x, y: BATTLE_BOX_HEIGHT, width: 10, height: 60, speed: -BONE_SPEED, color: 'white', isPlatform: false }); break; }
+                case 'BONES_RISING': { const x = Math.random() * (BATTLE_BOX_WIDTH - 10); newAttacksToAdd.push({ id: idBase, type: 'bone_v', x, y: BATTLE_BOX_HEIGHT, width: 10, height: 60, speed: -BONE_SPEED, color: 'white' }); break; }
                 case 'BONES_VERTICAL': { const x = Math.random() * (BATTLE_BOX_WIDTH - 10); const d = Math.random() < 0.5 ? 't' : 'b'; newAttacksToAdd.push({ id: idBase, type: 'bone_v', x, y: d === 't' ? -60 : BATTLE_BOX_HEIGHT, width: 10, height: 60, speed: BONE_SPEED * (d === 't' ? 1 : -1), color: 'white' }); break; }
                 case 'GASTER_BLASTER': { const side = ['left', 'right', 'top', 'bottom'][Math.floor(Math.random() * 4)]; let x = 0, y = 0, w = 0, h = 0; let o = 'h'; if (side === 'left' || side === 'right') { o = 'h'; w = BATTLE_BOX_WIDTH; h = GASTER_WIDTH; x = 0; y = Math.random() * (BATTLE_BOX_HEIGHT - h); } else { o = 'v'; h = BATTLE_BOX_HEIGHT; w = GASTER_WIDTH; y = 0; x = Math.random() * (BATTLE_BOX_WIDTH - w); } newAttacksToAdd.push({ id: idBase, type: 'gaster_warning', x, y, width: w, height: h, orientation: o, warnTimer: GASTER_WARN_DURATION }); break; }
                 default: break;
@@ -197,7 +151,7 @@ const App = () => {
    }, []);
 
   // Game Loop
-  const gameLoop = useCallback((timestamp) => {
+  const gameLoop = useCallback((timestamp) => { /* ... (変更なし) ... */
     if (gamePhaseRef.current === GamePhase.PRELOAD || gamePhaseRef.current === GamePhase.GAMEOVER) { cancelAnimationFrame(requestRef.current); requestRef.current = null; return; }
     if (!lastUpdateTimeRef.current) lastUpdateTimeRef.current = timestamp;
     const deltaTime = timestamp - lastUpdateTimeRef.current;
@@ -207,6 +161,7 @@ const App = () => {
     let hitDetectedThisFrame = false; let attacksToAddThisFrame = []; let attacksToRemoveThisFrame = new Set();
 
     setGameState(prev => {
+        const currentlyInvincible = prev.isInvincible;
         let newState = { ...prev }; let newBattlePlayerPosition;
         if (prev.gamePhase === GamePhase.DIALOGUE || prev.gamePhase === GamePhase.BATTLE) {
             let dx = 0; const hs = PLAYER_SPEED * deltaSeconds; if (pressedKeys.current['ArrowLeft'] || pressedKeys.current['KeyA']) dx -= hs; if (pressedKeys.current['ArrowRight'] || pressedKeys.current['KeyD']) dx += hs; let newX = playerPositionRef.current.x + dx; newX = Math.max(0, Math.min(newX, BATTLE_BOX_WIDTH - PLAYER_SIZE));
@@ -218,14 +173,14 @@ const App = () => {
         if (prev.gamePhase === GamePhase.BATTLE) {
             updatedAttacks = prev.attacks.map(a => {
                 let ua = { ...a };
-                switch (a.type) { case 'bone': ua.x += a.speed * deltaSeconds; break; case 'bone_v': ua.y += a.speed * deltaSeconds; break; default: break; }
+                switch (a.type) { case 'bone': ua.x += ua.speed * deltaSeconds; break; case 'bone_v': ua.y += ua.speed * deltaSeconds; break; default: break; }
                 if (a.lifetime !== undefined) { ua.lifetime -= deltaTime; if (ua.lifetime <= 0) attacksToRemoveThisFrame.add(a.id); }
                 if (a.warnTimer !== undefined) { ua.warnTimer -= deltaTime; if (ua.warnTimer <= 0 && !attacksToRemoveThisFrame.has(a.id)) { attacksToRemoveThisFrame.add(a.id); let bx, by, bw, bh; if (a.orientation === 'h') { bw = BATTLE_BOX_WIDTH; bh = GASTER_WIDTH; by = a.y + a.height/2 - bh/2; bx = 0; } else { bh = BATTLE_BOX_HEIGHT; bw = GASTER_WIDTH; bx = a.x + a.width/2 - bw/2; by = 0; } attacksToAddThisFrame.push({ id: a.id + '_beam', type: 'gaster_beam', x: bx, y: by, width: bw, height: bh, lifetime: GASTER_BEAM_DURATION, color: 'white' }); } }
                 return ua;
             });
             updatedAttacks.forEach(a => { if (a.type !== 'gaster_warning' && a.type !== 'gaster_beam') { if (a.x + a.width < -50 || a.x > BATTLE_BOX_WIDTH + 50 || a.y + a.height < -50 || a.y > BATTLE_BOX_HEIGHT + 50) attacksToRemoveThisFrame.add(a.id); } });
             const playerRect = { x: newBattlePlayerPosition.x, y: newBattlePlayerPosition.y }; let finalAttacks = [];
-            for (const attack of updatedAttacks) { if (attacksToRemoveThisFrame.has(attack.id)) continue; if (!hitDetectedThisFrame && checkBattleCollision(playerRect, attack)) { hitDetectedThisFrame = true; if (attack.type !== 'gaster_beam') { attacksToRemoveThisFrame.add(attack.id); continue; } } finalAttacks.push(attack); }
+            for (const attack of updatedAttacks) { if (attacksToRemoveThisFrame.has(attack.id)) continue; if (!currentlyInvincible && !hitDetectedThisFrame && checkBattleCollision(playerRect, attack)) { hitDetectedThisFrame = true; if (attack.type !== 'gaster_beam') { attacksToRemoveThisFrame.add(attack.id); continue; } } finalAttacks.push(attack); }
             newState.attacks = [...finalAttacks.filter(a => !attacksToRemoveThisFrame.has(a.id)), ...attacksToAddThisFrame];
         } else { newState.attacks = []; }
         playerHitInLastFrame.current = hitDetectedThisFrame;
@@ -239,50 +194,84 @@ const App = () => {
   }, [applyDamage, checkBattleCollision]);
 
 
-  // --- Audio Setup and Control ---
+  // --- Audio Setup and Control (★ Tone 参照を修正) ---
   const setupAudio = useCallback(() => {
-    synthRef.current = new Tone.Synth({ oscillator: { type: 'pulse', width: 0.5 }, envelope: { attack: 0.01, decay: 0.08, sustain: 0.1, release: 0.2 }, volume: -16 }).toDestination();
-    typingSynthRef.current = new Tone.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.001, decay: 0.03, sustain: 0, release: 0.05 }, volume: -22 }).toDestination();
+    // ★ Tone.Synth -> Synth
+    synthRef.current = new Synth({ oscillator: { type: 'pulse', width: 0.5 }, envelope: { attack: 0.01, decay: 0.08, sustain: 0.1, release: 0.2 }, volume: -16 }).toDestination();
+    typingSynthRef.current = new Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.001, decay: 0.03, sustain: 0, release: 0.05 }, volume: -22 }).toDestination();
     const notes = [ "C3", null, "E3", "G3", "C3", null, "E3", "G3", "A2", null, "C3", "E3", "A2", null, "C3", "E3", "F2", null, "A2", "C3", "F2", null, "A2", "C3", "G2", null, "B2", "D3", "G2", "B2", "D3", "G2" ];
-    bgmLoopRef.current = new Tone.Sequence((time, note) => { if (note && synthRef.current) { synthRef.current.triggerAttackRelease(note, "16n", time); } }, notes, "16n").start(0);
-    bgmLoopRef.current.loop = true; Tone.Transport.bpm.value = 104;
-   }, []);
+    // ★ Tone.Sequence -> Sequence
+    bgmLoopRef.current = new Sequence((time, note) => { if (note && synthRef.current) { synthRef.current.triggerAttackRelease(note, "16n", time); } }, notes, "16n").start(0);
+    bgmLoopRef.current.loop = true;
+    // ★ Tone.Transport -> Transport
+    Transport.bpm.value = 104;
+   }, []); // 依存配列は空でOK
 
   const startAudio = useCallback(async () => {
-    if (!toneStarted.current) { try { await Tone.start(); toneStarted.current = true; setupAudio(); Tone.Transport.start(); } catch (e) { console.error("Tone.jsの開始に失敗:", e); } } else if (Tone.Transport.state !== 'started') { Tone.Transport.start(); }
+    if (!toneStarted.current) {
+        try {
+            await start(); // ★ Tone.start -> start
+            toneStarted.current = true;
+            setupAudio();
+            Transport.start(); // ★ Tone.Transport -> Transport
+        } catch (e) { console.error("Tone.jsの開始に失敗:", e); }
+    // ★ Tone.Transport -> Transport
+    } else if (Transport.state !== 'started') {
+        Transport.start();
+    }
    }, [setupAudio]);
 
   const stopAudio = useCallback(() => {
-      if (Tone.Transport.state === 'started') { Tone.Transport.stop(); }
+      // ★ Tone.Transport -> Transport
+      if (Transport.state === 'started') { Transport.stop(); }
       bgmLoopRef.current?.dispose(); synthRef.current?.dispose(); typingSynthRef.current?.dispose();
       bgmLoopRef.current = null; synthRef.current = null; typingSynthRef.current = null;
+      clearTimeout(invincibilityTimerRef.current);
    }, []);
 
   const playTypingSound = useCallback(() => {
-      if (typingSynthRef.current && Tone.context.state === 'running') { typingSynthRef.current.triggerAttackRelease("C5", "16n", Tone.now()); }
+      // ★ Tone.context -> context, Tone.now -> now
+      if (typingSynthRef.current && context.state === 'running') {
+          typingSynthRef.current.triggerAttackRelease("C5", "16n", now());
+      }
    }, []);
 
 
   // --- Dialogue Sequence Logic ---
-  const typeNextLine = useCallback(() => {
+  const typeNextLine = useCallback(() => { /* ... (変更なし) ... */
       setGameState(prev => {
-          if (prev.gamePhase !== GamePhase.DIALOGUE) return prev;
+          if (prev.gamePhase !== GamePhase.DIALOGUE && prev.gamePhase !== GamePhase.INTERMISSION_DIALOGUE) return prev; // ★ INTERMISSION もチェック
+          const currentLines = prev.gamePhase === GamePhase.INTERMISSION_DIALOGUE ? INTERMISSION_DIALOGUE_LINES : DIALOGUE_LINES;
+          const currentPhase = prev.gamePhase;
+
           const lineIndex = prev.currentLineIndex;
-          if (lineIndex >= DIALOGUE_LINES.length) { const initPos = { x: BATTLE_BOX_WIDTH / 2 - PLAYER_SIZE / 2, y: BATTLE_BOX_HEIGHT / 2 - PLAYER_SIZE / 2 }; playerPositionRef.current = initPos; return { ...prev, gamePhase: GamePhase.BATTLE, showDialogue: false, battlePlayerPosition: initPos }; }
-          const fullText = DIALOGUE_LINES[lineIndex]; let charIndex = 0;
+          if (lineIndex >= currentLines.length) {
+              console.log("セリフ終了。");
+              if (currentPhase === GamePhase.INTERMISSION_DIALOGUE) {
+                  console.log("中間ダイアログ終了。戦闘再開、次の攻撃へ:", prev.nextAttackIndex);
+                  return { ...prev, gamePhase: GamePhase.BATTLE, showDialogue: false, currentAttackPatternIndex: prev.nextAttackIndex, nextAttackIndex: null };
+              } else {
+                  console.log("会話終了。戦闘フェーズへ移行します。");
+                  const initialBattlePosition = { x: BATTLE_BOX_WIDTH / 2 - PLAYER_SIZE / 2, y: BATTLE_BOX_HEIGHT / 2 - PLAYER_SIZE / 2 };
+                  playerPositionRef.current = initialBattlePosition;
+                  return { ...prev, gamePhase: GamePhase.BATTLE, showDialogue: false, battlePlayerPosition: initialBattlePosition };
+              }
+          }
+          const fullText = currentLines[lineIndex]; let charIndex = 0;
           clearInterval(typewriterIntervalRef.current); clearTimeout(nextLineTimeoutRef.current);
+          // console.log(`セリフ ${lineIndex + 1} を開始 (${currentPhase})`);
           typewriterIntervalRef.current = setInterval(() => {
               setGameState(currentInternalState => {
-                  if (currentInternalState.gamePhase !== GamePhase.DIALOGUE) { clearInterval(typewriterIntervalRef.current); return currentInternalState; }
+                  if (currentInternalState.gamePhase !== currentPhase) { clearInterval(typewriterIntervalRef.current); return currentInternalState; }
                   if (charIndex < fullText.length) { if(currentInternalState.displayedDialogue.length < fullText.length) playTypingSound(); const nextDisplayed = fullText.substring(0, charIndex + 1); charIndex++; return { ...currentInternalState, displayedDialogue: nextDisplayed }; }
-                  else { clearInterval(typewriterIntervalRef.current); nextLineTimeoutRef.current = setTimeout(typeNextLine, DELAY_BETWEEN_LINES); return currentInternalState; }
+                  else { clearInterval(typewriterIntervalRef.current); /* console.log(`セリフ ${lineIndex + 1} を完了 (${currentPhase})`); */ nextLineTimeoutRef.current = setTimeout(typeNextLine, DELAY_BETWEEN_LINES); return currentInternalState; }
               });
           }, TYPEWRITER_SPEED);
           return { ...prev, displayedDialogue: "", showDialogue: true, currentLineIndex: lineIndex + 1 };
       });
   }, [playTypingSound]);
 
-  const startDialogueSequence = useCallback(() => {
+  const startDialogueSequence = useCallback(() => { /* ... (変更なし) ... */
       clearTimeout(nextLineTimeoutRef.current); clearInterval(typewriterIntervalRef.current);
       setGameState(prev => ({ ...prev, currentLineIndex: 0, displayedDialogue: "", showDialogue: true }));
       typeNextLine();
@@ -290,15 +279,14 @@ const App = () => {
 
 
   // --- Game Start & Reset Logic ---
-  const resetGame = useCallback(() => {
+  const resetGame = useCallback(() => { /* ... (変更なし) ... */
       console.log("ゲームをリセットします..."); stopAudio();
       clearInterval(spawnIntervalRef.current); clearTimeout(nextPatternTimeoutRef.current); clearInterval(attackTimerIntervalRef.current); clearTimeout(boundaryDamageTimerRef.current); clearInterval(battleTimerIntervalRef.current); clearInterval(typewriterIntervalRef.current); clearTimeout(nextLineTimeoutRef.current);
       cancelAnimationFrame(requestRef.current); requestRef.current = null;
       const initialState = getInitialState(); setGameState(initialState); playerPositionRef.current = initialState.battlePlayerPosition; gamePhaseRef.current = GamePhase.PRELOAD; pressedKeys.current = {}; lastUpdateTimeRef.current = 0; toneStarted.current = false;
       console.log("ゲームのリセット完了。");
   }, [stopAudio]);
-
-  const handleStartGame = useCallback(async () => {
+  const handleStartGame = useCallback(async () => { /* ... (変更なし) ... */
     await startAudio(); const initialState = getInitialState(); playerPositionRef.current = initialState.battlePlayerPosition;
     setGameState(prev => ({ ...initialState, gamePhase: GamePhase.DIALOGUE, showDialogue: true }));
   }, [startAudio]);
@@ -308,27 +296,68 @@ const App = () => {
   const handleKeyDown = useCallback((event) => { if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)) pressedKeys.current[event.code] = true; }, []);
   const handleKeyUp = useCallback((event) => { if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)) pressedKeys.current[event.code] = false; }, []);
 
-  // --- Attack Pattern Switching Logic ---
+  // --- Attack Pattern Switching Logic (★ 中間ダイアログへの遷移を追加) ---
   const switchToNextPattern = useCallback(() => {
       clearTimeout(nextPatternTimeoutRef.current);
       setGameState(prev => {
           if (prev.gamePhase !== GamePhase.BATTLE) return prev;
           if (ATTACK_PATTERNS.length === 0) return prev;
-          const nextIndex = (prev.currentAttackPatternIndex + 1) % ATTACK_PATTERNS.length;
-          const nextPattern = ATTACK_PATTERNS[nextIndex];
-          // console.log(`次の攻撃パターンへ移行: ${nextPattern.name} (持続時間: ${nextPattern.duration}ms)`);
-          nextPatternTimeoutRef.current = setTimeout(switchToNextPattern, nextPattern.duration);
-          return { ...prev, currentAttackPatternIndex: nextIndex, attackTimer: nextPattern.duration / 1000 };
+
+          const currentPatternIndex = prev.currentAttackPatternIndex;
+          const nextIndexRaw = currentPatternIndex + 1;
+
+          // ★ 3番目(index 2)の攻撃が終わった後か？
+          if (currentPatternIndex === 2) {
+              console.log("攻撃パターン3終了。中間ダイアログへ移行。");
+              return {
+                  ...prev,
+                  gamePhase: GamePhase.INTERMISSION_DIALOGUE, // 中間ダイアログフェーズへ
+                  nextAttackIndex: nextIndexRaw % ATTACK_PATTERNS.length, // 次の攻撃インデックスを保存
+                  attacks: [], // 画面上の攻撃をクリア
+                  showDialogue: true, // ダイアログ表示開始フラグ
+                  currentLineIndex: 0, // ダイアログ行リセット
+                  displayedDialogue: "", // 表示テキストリセット
+              };
+          } else {
+              // 通常のパターン切り替え
+              const nextIndex = nextIndexRaw % ATTACK_PATTERNS.length;
+              const nextPattern = ATTACK_PATTERNS[nextIndex];
+              console.log(`次の攻撃パターンへ移行: ${nextPattern.name} (持続時間: ${nextPattern.duration}ms)`);
+              nextPatternTimeoutRef.current = setTimeout(switchToNextPattern, nextPattern.duration);
+              return {
+                  ...prev,
+                  currentAttackPatternIndex: nextIndex,
+                  attackTimer: nextPattern.duration / 1000,
+                  // attacks: [] // クリアしない
+              };
+          }
       });
-  }, []);
+  }, []); // setGameState は安定
 
    // --- 戦闘開始処理 ---
    const startBattle = useCallback(() => {
-      console.log("フェーズ戦闘: セットアップ開始。");
+      // console.log("フェーズ戦闘: セットアップ開始。");
       setTimeout(() => battleBoxRef.current?.focus(), 0);
-      if (!requestRef.current) { console.log("Restarting game loop for BATTLE phase."); lastUpdateTimeRef.current = 0; requestRef.current = requestAnimationFrame(gameLoop); }
+      if (!requestRef.current) { /* console.log("Restarting game loop for BATTLE phase."); */ lastUpdateTimeRef.current = 0; requestRef.current = requestAnimationFrame(gameLoop); }
       spawnIntervalRef.current = setInterval(spawnAttack, SPAWN_INTERVAL);
-      setGameState(prev => { if (ATTACK_PATTERNS.length > 0) { const idx = prev.currentAttackPatternIndex; const pattern = ATTACK_PATTERNS[idx]; if (pattern) { console.log(`最初の攻撃パターン: ${pattern.name}, ${pattern.duration}ms後に切り替え`); clearTimeout(nextPatternTimeoutRef.current); nextPatternTimeoutRef.current = setTimeout(switchToNextPattern, pattern.duration); return {...prev, attackTimer: pattern.duration / 1000}; } } return prev; });
+      // ★ setGameState を使って、現在の attack index に基づいてタイマーを設定
+      setGameState(prev => {
+          if (ATTACK_PATTERNS.length > 0) {
+              // ★ prev.currentAttackPatternIndex を使用
+              const currentPatternIndex = prev.currentAttackPatternIndex;
+              const pattern = ATTACK_PATTERNS[currentPatternIndex];
+              if (pattern) {
+                   console.log(`現在の攻撃パターン開始: ${pattern.name}, ${pattern.duration}ms後に切り替え`);
+                   clearTimeout(nextPatternTimeoutRef.current);
+                   nextPatternTimeoutRef.current = setTimeout(switchToNextPattern, pattern.duration);
+                   return {...prev, attackTimer: pattern.duration / 1000};
+              } else {
+                   console.warn("現在の攻撃パターンが見つかりません:", currentPatternIndex);
+                   return prev;
+              }
+          }
+          return prev;
+      });
       attackTimerIntervalRef.current = setInterval(() => setGameState(prev => (prev.gamePhase === GamePhase.BATTLE ? { ...prev, attackTimer: Math.max(0, prev.attackTimer - 1) } : prev)), 1000);
       battleTimerIntervalRef.current = setInterval(() => setGameState(prev => { if (prev.gamePhase !== GamePhase.BATTLE) { clearInterval(battleTimerIntervalRef.current); return prev; } const newTime = prev.battleTimeRemaining - 1; if (newTime < 0) { clearInterval(battleTimerIntervalRef.current); resetGame(); return prev; } return { ...prev, battleTimeRemaining: newTime }; }), 1000);
   }, [spawnAttack, switchToNextPattern, gameLoop, resetGame]);
@@ -337,21 +366,28 @@ const App = () => {
   // --- Effects ---
 
   // Keyboard Listener Setup
-  useEffect(() => {
+  useEffect(() => { /* ... (変更なし) ... */
       window.addEventListener('keydown', handleKeyDown); window.addEventListener('keyup', handleKeyUp);
       return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); };
   }, [handleKeyDown, handleKeyUp]);
 
-  // Main Game Phase Logic
+  // Main Game Phase Logic (★ INTERMISSION_DIALOGUE を追加)
   useEffect(() => {
       const cleanup = () => {
           clearInterval(spawnIntervalRef.current); clearTimeout(nextPatternTimeoutRef.current); clearInterval(attackTimerIntervalRef.current); clearInterval(battleTimerIntervalRef.current);
           if (requestRef.current) { cancelAnimationFrame(requestRef.current); requestRef.current = null; }
           clearInterval(typewriterIntervalRef.current); clearTimeout(nextLineTimeoutRef.current);
+          clearTimeout(invincibilityTimerRef.current);
       };
       switch (gamePhase) {
           case GamePhase.PRELOAD: cleanup(); stopAudio(); break;
-          case GamePhase.DIALOGUE: cleanup(); lastUpdateTimeRef.current = 0; if (!requestRef.current) requestRef.current = requestAnimationFrame(gameLoop); startDialogueSequence(); setTimeout(() => battleBoxRef.current?.focus(), 0); if (Tone.Transport.state !== 'started' && toneStarted.current) Tone.Transport.start(); break;
+          case GamePhase.DIALOGUE: cleanup(); lastUpdateTimeRef.current = 0; if (!requestRef.current) requestRef.current = requestAnimationFrame(gameLoop); startDialogueSequence(); setTimeout(() => battleBoxRef.current?.focus(), 0); if (Transport.state !== 'started' && toneStarted.current) Transport.start(); break; // ★ Tone. -> Transport
+          case GamePhase.INTERMISSION_DIALOGUE: // ★ 追加
+              cleanup(); // 戦闘タイマー等を停止
+              if (!requestRef.current) { lastUpdateTimeRef.current = 0; requestRef.current = requestAnimationFrame(gameLoop); } // ループは継続
+              startDialogueSequence(); // 中間ダイアログ開始
+              setTimeout(() => battleBoxRef.current?.focus(), 0);
+              break;
           case GamePhase.BATTLE: startBattle(); break;
           case GamePhase.GAMEOVER: cleanup(); stopAudio(); break;
           default: break;
@@ -362,7 +398,7 @@ const App = () => {
 
 
    // Out-of-bounds damage handling
-   useEffect(() => {
+   useEffect(() => { /* ... (変更なし) ... */
         if (gamePhase !== GamePhase.BATTLE) { clearTimeout(boundaryDamageTimerRef.current); boundaryDamageTimerRef.current = null; return; }
         if (isOutsideBounds) { if (!boundaryDamageTimerRef.current) { applyDamage(DAMAGE_AMOUNT / 2); boundaryDamageTimerRef.current = setTimeout(() => { boundaryDamageTimerRef.current = null; }, BOUNDARY_DAMAGE_INTERVAL); } }
         else { clearTimeout(boundaryDamageTimerRef.current); boundaryDamageTimerRef.current = null; }
@@ -391,20 +427,28 @@ const App = () => {
             .gaster-warning { position: absolute; border: 2px dashed rgba(255, 255, 255, 0.7); box-sizing: border-box; z-index: 15; animation: blink-warning 0.2s linear infinite alternate; }
             @keyframes blink-warning { 0% { border-color: rgba(255, 255, 255, 0.7); } 100% { border-color: rgba(255, 255, 255, 0.2); } }
             .gaster-beam { position: absolute; background-color: rgba(255, 255, 255, 0.9); box-shadow: 0 0 10px 5px rgba(255, 255, 255, 0.5); z-index: 5; }
+            @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+            .game-title { font-family: 'Press Start 2P', cursive; color: white; text-shadow: 2px 2px #555; }
+            .player-invincible { animation: blink-invincible 0.1s linear infinite; }
+            @keyframes blink-invincible { 50% { opacity: 0.5; } }
           `}</style>
 
            {/* --- Rendering based on Game Phase --- */}
            {gamePhase === GamePhase.PRELOAD && <PreloadScreen onStart={handleStartGame} />}
 
-           {(gamePhase === GamePhase.DIALOGUE || gamePhase === GamePhase.BATTLE || gamePhase === GamePhase.GAMEOVER) && (
+           {/* ★ INTERMISSION_DIALOGUE も DIALOGUE と同様に表示 */}
+           {(gamePhase === GamePhase.DIALOGUE || gamePhase === GamePhase.INTERMISSION_DIALOGUE || gamePhase === GamePhase.BATTLE || gamePhase === GamePhase.GAMEOVER) && (
              <>
                <div className="mb-1 relative flex flex-col items-center"> <EnemyCharacter /> <DialogueBox text={displayedDialogue} show={showDialogue} /> </div>
                <div ref={battleBoxRef} className="relative border-2 border-white overflow-hidden bg-black mt-2" style={{ width: `${BATTLE_BOX_WIDTH}px`, height: `${BATTLE_BOX_HEIGHT}px` }} tabIndex={0}>
-                  {gamePhase !== GamePhase.GAMEOVER && <Player position={battlePlayerPosition} />}
+                  {gamePhase !== GamePhase.GAMEOVER && <Player position={battlePlayerPosition} isInvincible={isInvincible} />}
+                  {/* ★ 攻撃は BATTLE フェーズでのみ表示 */}
                   {gamePhase === GamePhase.BATTLE && attacks.map((attack) => <AttackRenderer key={attack.id} attack={attack} /> )}
                   {gamePhase === GamePhase.GAMEOVER && <GameOverScreen onRestart={resetGame} />}
               </div>
+               {/* ★ UI は BATTLE フェーズでのみタイマー表示 */}
                <UIElements hp={hp} currentAttackName={currentAttack?.name} attackTimer={attackTimer} battleTimeRemaining={battleTimeRemaining} isBattle={gamePhase === GamePhase.BATTLE} />
+               {/* ★ アクションボタンは BATTLE フェーズでのみ有効 */}
                <ActionButtons disabled={gamePhase !== GamePhase.BATTLE} />
              </>
            )}
