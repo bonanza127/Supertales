@@ -1,0 +1,43 @@
+/* Tailwind CSS を使う場合の基本的な設定 (npm installした場合) */
+/* @tailwind base; */
+/* @tailwind components; */
+/* @tailwind utilities; */
+
+/* その他のグローバルスタイルがあればここに追加 */
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: black; /* デフォルト背景を黒に */
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* App.js 内の <style> タグの内容はこちらに移動しても良い */
+/* 例: */
+/*
+.pixelated { image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges; }
+button:focus, [tabindex="0"]:focus { outline: 2px solid orange; outline-offset: 2px; }
+.dialogue-container { ... }
+.dialogue-box { ... }
+.dialogue-box::after { ... }
+.dialogue-box p::after { ... }
+@keyframes blink { 50% { opacity: 0; } }
+.attack-bone { ... }
+.attack-platform { ... }
+.gaster-warning { ... }
+@keyframes blink-warning { ... }
+.gaster-beam { ... }
+.game-title { ... }
+.player-invincible { ... }
+@keyframes blink-invincible { ... }
+*/
+```
+* Tailwind CSS を CDN で読み込む場合は、`@tailwind` ディレクティブは不要です。
+* `App.js` 内の `<style>` タグの内容をこちらに移動させると、コードがより整理されます。
