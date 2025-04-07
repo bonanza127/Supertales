@@ -1,0 +1,4 @@
+[build]
+  base = "react-app/"
+  publish = "build"
+  command = "CI= npm run build"
