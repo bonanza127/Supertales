@@ -18,26 +18,3 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
-
-/* App.js 内の <style> タグの内容はこちらに移動しても良い */
-/* 例: */
-/*
-.pixelated { image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges; }
-button:focus, [tabindex="0"]:focus { outline: 2px solid orange; outline-offset: 2px; }
-.dialogue-container { ... }
-.dialogue-box { ... }
-.dialogue-box::after { ... }
-.dialogue-box p::after { ... }
-@keyframes blink { 50% { opacity: 0; } }
-.attack-bone { ... }
-.attack-platform { ... }
-.gaster-warning { ... }
-@keyframes blink-warning { ... }
-.gaster-beam { ... }
-.game-title { ... }
-.player-invincible { ... }
-@keyframes blink-invincible { ... }
-*/
-```
-* Tailwind CSS を CDN で読み込む場合は、`@tailwind` ディレクティブは不要です。
-* `App.js` 内の `<style>` タグの内容をこちらに移動させると、コードがより整理されます。
