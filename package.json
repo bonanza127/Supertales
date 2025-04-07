@@ -2,20 +2,18 @@
   "name": "super-tale-game",
   "version": "0.1.0",
   "private": true,
-  "homepage": ".", // GitHub Pages用設定 (Netlifyなら不要な場合も) "."は相対パスを示す
+  "homepage": ".",
   "dependencies": {
-    "react": "^18.2.0", // React 本体
-    "react-dom": "^18.2.0", // React を DOM に描画するライブラリ
-    "tone": "^14.7.77", // 音声ライブラリ (バージョンは例)
-    "lucide-react": "^0.309.0" // アイコンライブラリ (Heart以外でも使う可能性があれば)
-    // 他に必要なライブラリがあれば追加
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tone": "^14.7.77",
+    "lucide-react": "^0.309.0"
   },
   "scripts": {
-    "start": "react-scripts start", // 開発サーバー起動 (Create React Appの場合)
-    "build": "react-scripts build", // 本番用ファイル生成 (Create React Appの場合)
+    "start": "react-scripts start",
+    "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
-    // Viteなど他のツールを使う場合は、ここのコマンドが変わります
   },
   "eslintConfig": {
     "extends": [
@@ -36,11 +34,6 @@
     ]
   },
   "devDependencies": {
-    "react-scripts": "5.0.1" // Create React App のスクリプト (バージョンは例)
-    // "tailwindcss": "^3.4.1" // Tailwind を npm で管理する場合
+    "react-scripts": "5.0.1"
   }
 }
-```
-* **注意:** 上記は `create-react-app` を使ってプロジェクトを作成した場合の一般的な例です。もし `Vite` など他のツールを使う場合は、`scripts` や `devDependencies` の内容が異なります。
-* **`homepage`:** GitHub Pagesで `https://<ユーザー名>.github.io/<リポジトリ名>/` のようなサブディレクトリに公開する場合は `.` または `/<リポジトリ名>` を指定します。Netlifyでルートに公開する場合は通常不要か、空文字列 `""` にします。
-* **依存関係:** コード内で `import` しているライブラリ (`react`, `react-dom`, `tone`, `lucide-react`) を `dependencies` に記述します。バージョンは必要に応じて調整してください。
