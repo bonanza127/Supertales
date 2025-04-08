@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart } from 'lucide-react';
-// ★ Tone.js のインポート方法を名前付きインポートに戻す
-import { Synth, Sequence, Transport, start, context, now } from 'tone';
-// import * as Tone from 'tone'; // 前回の行
+import * as Tone from 'tone'; // ビルドエラー解消のため namespace import に戻す
 
 // ============================================================================
 // --- 定数定義 (Constants) ---
@@ -40,9 +38,14 @@ const DIALOGUE_LINES = [
     "on days like these, projects like you...",
     "Should go to the moon."
 ];
+// ★ 中間ダイアログ用のセリフ定義を追加
+const INTERMISSION_DIALOGUE_LINES = [
+    "*Huff... puff...*",
+    "PEPE seems tired of trading memecoins."
+];
 
 // --- ゲームフェーズ定義 ---
-const GamePhase = { PRELOAD: '準備中', DIALOGUE: '会話', BATTLE: '戦闘', GAMEOVER: 'ゲームオーバー' };
+const GamePhase = { PRELOAD: '準備中', DIALOGUE: '会話', BATTLE: '戦闘', INTERMISSION_DIALOGUE: '幕間会話', GAMEOVER: 'ゲームオーバー' };
 
 // --- 初期状態 ---
 const getInitialState = () => ({
@@ -58,6 +61,7 @@ const getInitialState = () => ({
     isOutsideBounds: false,
     battleTimeRemaining: BATTLE_DURATION_SECONDS,
     isInvincible: false,
+    nextAttackIndex: null,
 });
 
 // --- エラーバウンダリコンポーネント ---
@@ -93,7 +97,7 @@ const PreloadScreen = React.memo(({ onStart }) => ( <div className="text-center"
 const App = () => {
   // --- State & Refs ---
   const [gameState, setGameState] = useState(getInitialState());
-  const { gamePhase, showDialogue, displayedDialogue, currentLineIndex, battlePlayerPosition, hp, currentAttackPatternIndex, attackTimer, attacks, isOutsideBounds, battleTimeRemaining, isInvincible } = gameState;
+  const { gamePhase, showDialogue, displayedDialogue, currentLineIndex, battlePlayerPosition, hp, currentAttackPatternIndex, attackTimer, attacks, isOutsideBounds, battleTimeRemaining, isInvincible, nextAttackIndex } = gameState;
   const currentAttack = ATTACK_PATTERNS[currentAttackPatternIndex] ?? null;
   const requestRef = useRef(); const lastUpdateTimeRef = useRef(0); const pressedKeys = useRef({});
   const spawnIntervalRef = useRef(null); const nextPatternTimeoutRef = useRef(null); const attackTimerIntervalRef = useRef(null); const boundaryDamageTimerRef = useRef(null);
@@ -123,7 +127,7 @@ const App = () => {
   // Apply Damage
    const applyDamage = useCallback((amount) => { /* ... (変更なし) ... */
         setGameState(prev => {
-            if (prev.isInvincible || prev.hp <= 0 || (prev.gamePhase !== GamePhase.BATTLE && prev.gamePhase !== GamePhase.DIALOGUE)) return prev;
+            if (prev.isInvincible || prev.hp <= 0 || (prev.gamePhase !== GamePhase.BATTLE && prev.gamePhase !== GamePhase.DIALOGUE && prev.gamePhase !== GamePhase.INTERMISSION_DIALOGUE)) return prev;
             const newHp = Math.max(0, prev.hp - amount);
             let nextPhase = prev.gamePhase;
             let shouldBeInvincible = false;
@@ -164,7 +168,7 @@ const App = () => {
     setGameState(prev => {
         const currentlyInvincible = prev.isInvincible;
         let newState = { ...prev }; let newBattlePlayerPosition;
-        if (prev.gamePhase === GamePhase.DIALOGUE || prev.gamePhase === GamePhase.BATTLE) {
+        if (prev.gamePhase === GamePhase.DIALOGUE || prev.gamePhase === GamePhase.BATTLE || prev.gamePhase === GamePhase.INTERMISSION_DIALOGUE) { // Allow movement during intermission
             let dx = 0; const hs = PLAYER_SPEED * deltaSeconds; if (pressedKeys.current['ArrowLeft'] || pressedKeys.current['KeyA']) dx -= hs; if (pressedKeys.current['ArrowRight'] || pressedKeys.current['KeyD']) dx += hs; let newX = playerPositionRef.current.x + dx; newX = Math.max(0, Math.min(newX, BATTLE_BOX_WIDTH - PLAYER_SIZE));
             let newY = playerPositionRef.current.y; const vs = PLAYER_SPEED * deltaSeconds; let dy = 0; if (pressedKeys.current['ArrowUp'] || pressedKeys.current['KeyW']) dy -= vs; if (pressedKeys.current['ArrowDown'] || pressedKeys.current['KeyS']) dy += vs; newY += dy; newY = Math.max(0, Math.min(newY, BATTLE_BOX_HEIGHT - PLAYER_SIZE));
             newBattlePlayerPosition = { x: newX, y: newY }; newState.battlePlayerPosition = newBattlePlayerPosition;
@@ -183,7 +187,7 @@ const App = () => {
             const playerRect = { x: newBattlePlayerPosition.x, y: newBattlePlayerPosition.y }; let finalAttacks = [];
             for (const attack of updatedAttacks) { if (attacksToRemoveThisFrame.has(attack.id)) continue; if (!currentlyInvincible && !hitDetectedThisFrame && checkBattleCollision(playerRect, attack)) { hitDetectedThisFrame = true; if (attack.type !== 'gaster_beam') { attacksToRemoveThisFrame.add(attack.id); continue; } } finalAttacks.push(attack); }
             newState.attacks = [...finalAttacks.filter(a => !attacksToRemoveThisFrame.has(a.id)), ...attacksToAddThisFrame];
-        } else { newState.attacks = []; }
+        } else { newState.attacks = prev.attacks; } // Keep attacks during intermission
         playerHitInLastFrame.current = hitDetectedThisFrame;
         const outside = newBattlePlayerPosition.x < 0 || newBattlePlayerPosition.x + PLAYER_SIZE > BATTLE_BOX_WIDTH || newBattlePlayerPosition.y < 0 || newBattlePlayerPosition.y + PLAYER_SIZE > BATTLE_BOX_HEIGHT;
         newState.isOutsideBounds = outside;
@@ -195,73 +199,77 @@ const App = () => {
   }, [applyDamage, checkBattleCollision]);
 
 
-  // --- Audio Setup and Control (★ Tone 参照を修正) ---
-  const setupAudio = useCallback(() => {
-    // ★ Tone.Synth -> Synth
-    synthRef.current = new Synth({ oscillator: { type: 'pulse', width: 0.5 }, envelope: { attack: 0.01, decay: 0.08, sustain: 0.1, release: 0.2 }, volume: -16 }).toDestination();
-    typingSynthRef.current = new Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.001, decay: 0.03, sustain: 0, release: 0.05 }, volume: -22 }).toDestination();
+  // --- Audio Setup and Control ---
+  const setupAudio = useCallback(() => { /* ... (変更なし) ... */
+    synthRef.current = new Tone.Synth({ oscillator: { type: 'pulse', width: 0.5 }, envelope: { attack: 0.01, decay: 0.08, sustain: 0.1, release: 0.2 }, volume: -16 }).toDestination();
+    typingSynthRef.current = new Tone.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.001, decay: 0.03, sustain: 0, release: 0.05 }, volume: -22 }).toDestination();
     const notes = [ "C3", null, "E3", "G3", "C3", null, "E3", "G3", "A2", null, "C3", "E3", "A2", null, "C3", "E3", "F2", null, "A2", "C3", "F2", null, "A2", "C3", "G2", null, "B2", "D3", "G2", "B2", "D3", "G2" ];
-    // ★ Tone.Sequence -> Sequence
-    bgmLoopRef.current = new Sequence((time, note) => { if (note && synthRef.current) { synthRef.current.triggerAttackRelease(note, "16n", time); } }, notes, "16n").start(0);
-    bgmLoopRef.current.loop = true;
-    // ★ Tone.Transport -> Transport
-    Transport.bpm.value = 104;
+    bgmLoopRef.current = new Tone.Sequence((time, note) => { if (note && synthRef.current) { synthRef.current.triggerAttackRelease(note, "16n", time); } }, notes, "16n").start(0);
+    bgmLoopRef.current.loop = true; Tone.Transport.bpm.value = 104;
    }, []);
-
-  const startAudio = useCallback(async () => {
-    if (!toneStarted.current) {
-        try {
-            await start(); // ★ Tone.start -> start
-            toneStarted.current = true;
-            setupAudio();
-            Transport.start(); // ★ Tone.Transport -> Transport
-        } catch (e) { console.error("Tone.jsの開始に失敗:", e); }
-    // ★ Tone.Transport -> Transport
-    } else if (Transport.state !== 'started') {
-        Transport.start();
-    }
+  const startAudio = useCallback(async () => { /* ... (変更なし) ... */
+    if (!toneStarted.current) { try { await Tone.start(); toneStarted.current = true; setupAudio(); Tone.Transport.start(); } catch (e) { console.error("Tone.jsの開始に失敗:", e); } } else if (Tone.Transport.state !== 'started') { Tone.Transport.start(); }
    }, [setupAudio]);
-
-  const stopAudio = useCallback(() => {
-      // ★ Tone.Transport -> Transport
-      if (Transport.state === 'started') { Transport.stop(); }
+  const stopAudio = useCallback(() => { /* ... (変更なし) ... */
+      if (Tone.Transport.state === 'started') { Tone.Transport.stop(); }
       bgmLoopRef.current?.dispose(); synthRef.current?.dispose(); typingSynthRef.current?.dispose();
       bgmLoopRef.current = null; synthRef.current = null; typingSynthRef.current = null;
       clearTimeout(invincibilityTimerRef.current);
    }, []);
-
-  const playTypingSound = useCallback(() => {
-      // ★ context -> context, now -> now
-      if (typingSynthRef.current && context.state === 'running') {
-          typingSynthRef.current.triggerAttackRelease("C5", "16n", now());
-      }
-   }, []);
+  const playTypingSound = useCallback(() => { if (Tone && typingSynthRef.current && Tone.context.state === 'running') { typingSynthRef.current.triggerAttackRelease("C5", "16n", Tone.now()); } }, []);
 
 
-  // --- Dialogue Sequence Logic ---
-  const typeNextLine = useCallback(() => { /* ... (変更なし) ... */
+  // --- Dialogue Sequence Logic (★ 中間ダイアログ対応) ---
+  const typeNextLine = useCallback(() => {
       setGameState(prev => {
-          if (prev.gamePhase !== GamePhase.DIALOGUE && prev.gamePhase !== GamePhase.INTERMISSION_DIALOGUE) return prev;
+          // ★ 現在のフェーズに応じて使用するセリフを決定
           const currentLines = prev.gamePhase === GamePhase.INTERMISSION_DIALOGUE ? INTERMISSION_DIALOGUE_LINES : DIALOGUE_LINES;
           const currentPhase = prev.gamePhase;
+
+          if (currentPhase !== GamePhase.DIALOGUE && currentPhase !== GamePhase.INTERMISSION_DIALOGUE) return prev;
+
           const lineIndex = prev.currentLineIndex;
           if (lineIndex >= currentLines.length) {
-              if (currentPhase === GamePhase.INTERMISSION_DIALOGUE) { return { ...prev, gamePhase: GamePhase.BATTLE, showDialogue: false, currentAttackPatternIndex: prev.nextAttackIndex, nextAttackIndex: null }; }
-              else { const initPos = { x: BATTLE_BOX_WIDTH / 2 - PLAYER_SIZE / 2, y: BATTLE_BOX_HEIGHT / 2 - PLAYER_SIZE / 2 }; playerPositionRef.current = initPos; return { ...prev, gamePhase: GamePhase.BATTLE, showDialogue: false, battlePlayerPosition: initPos }; }
+              console.log("セリフ終了。");
+              if (currentPhase === GamePhase.INTERMISSION_DIALOGUE) {
+                  console.log("中間ダイアログ終了。戦闘再開、次の攻撃へ:", prev.nextAttackIndex);
+                  return {
+                      ...prev,
+                      gamePhase: GamePhase.BATTLE, // 戦闘フェーズに戻す
+                      showDialogue: false,
+                      currentAttackPatternIndex: prev.nextAttackIndex, // ★ 保存しておいた次のインデックスを設定
+                      nextAttackIndex: null, // クリア
+                      // attacks: [] // 攻撃はクリアしない
+                  };
+              } else {
+                  console.log("会話終了。戦闘フェーズへ移行します。");
+                  const initialBattlePosition = { x: BATTLE_BOX_WIDTH / 2 - PLAYER_SIZE / 2, y: BATTLE_BOX_HEIGHT / 2 - PLAYER_SIZE / 2 };
+                  playerPositionRef.current = initialBattlePosition;
+                  return {
+                      ...prev,
+                      gamePhase: GamePhase.BATTLE,
+                      showDialogue: false,
+                      battlePlayerPosition: initialBattlePosition
+                  };
+              }
           }
+
           const fullText = currentLines[lineIndex]; let charIndex = 0;
           clearInterval(typewriterIntervalRef.current); clearTimeout(nextLineTimeoutRef.current);
+          // console.log(`セリフ ${lineIndex + 1} を開始 (${currentPhase})`);
           typewriterIntervalRef.current = setInterval(() => {
               setGameState(currentInternalState => {
                   if (currentInternalState.gamePhase !== currentPhase) { clearInterval(typewriterIntervalRef.current); return currentInternalState; }
                   if (charIndex < fullText.length) { if(currentInternalState.displayedDialogue.length < fullText.length) playTypingSound(); const nextDisplayed = fullText.substring(0, charIndex + 1); charIndex++; return { ...currentInternalState, displayedDialogue: nextDisplayed }; }
-                  else { clearInterval(typewriterIntervalRef.current); nextLineTimeoutRef.current = setTimeout(typeNextLine, DELAY_BETWEEN_LINES); return currentInternalState; }
+                  else { clearInterval(typewriterIntervalRef.current); /* console.log(`セリフ ${lineIndex + 1} を完了 (${currentPhase})`); */ nextLineTimeoutRef.current = setTimeout(typeNextLine, DELAY_BETWEEN_LINES); return currentInternalState; }
               });
           }, TYPEWRITER_SPEED);
           return { ...prev, displayedDialogue: "", showDialogue: true, currentLineIndex: lineIndex + 1 };
       });
-  }, [playTypingSound]);
-  const startDialogueSequence = useCallback(() => { /* ... (変更なし) ... */
+  }, [playTypingSound]); // setGameState is stable
+
+  // ★ startDialogueSequence は変更なし (typeNextLine がフェーズを見て判断)
+  const startDialogueSequence = useCallback(() => {
       clearTimeout(nextLineTimeoutRef.current); clearInterval(typewriterIntervalRef.current);
       setGameState(prev => ({ ...prev, currentLineIndex: 0, displayedDialogue: "", showDialogue: true }));
       typeNextLine();
@@ -286,34 +294,63 @@ const App = () => {
   const handleKeyDown = useCallback((event) => { if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)) pressedKeys.current[event.code] = true; }, []);
   const handleKeyUp = useCallback((event) => { if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)) pressedKeys.current[event.code] = false; }, []);
 
-  // --- Attack Pattern Switching Logic ---
-  const switchToNextPattern = useCallback(() => { /* ... (変更なし) ... */
+  // --- Attack Pattern Switching Logic (★ 中間ダイアログへの遷移を追加) ---
+  const switchToNextPattern = useCallback(() => {
       clearTimeout(nextPatternTimeoutRef.current);
       setGameState(prev => {
           if (prev.gamePhase !== GamePhase.BATTLE) return prev;
           if (ATTACK_PATTERNS.length === 0) return prev;
+
           const currentPatternIndex = prev.currentAttackPatternIndex;
           const nextIndexRaw = currentPatternIndex + 1;
-          if (currentPatternIndex === 2) { // ★ Index 2 is Gaster Blaster
+          const nextAttackPatternIndex = nextIndexRaw % ATTACK_PATTERNS.length;
+
+          // ★ 3番目(index 2)の攻撃が終わった後か？
+          if (currentPatternIndex === 2) {
               console.log("攻撃パターン3終了。中間ダイアログへ移行。");
-              return { ...prev, gamePhase: GamePhase.INTERMISSION_DIALOGUE, nextAttackIndex: nextIndexRaw % ATTACK_PATTERNS.length, attacks: [], showDialogue: true, currentLineIndex: 0, displayedDialogue: "" };
+              return {
+                  ...prev,
+                  gamePhase: GamePhase.INTERMISSION_DIALOGUE, // 中間ダイアログフェーズへ
+                  nextAttackIndex: nextAttackPatternIndex, // 次の攻撃インデックスを保存
+                  attacks: [], // 画面上の攻撃をクリア
+                  showDialogue: true,
+                  currentLineIndex: 0,
+                  displayedDialogue: "",
+              };
           } else {
-              const nextIndex = nextIndexRaw % ATTACK_PATTERNS.length;
-              const nextPattern = ATTACK_PATTERNS[nextIndex];
+              // 通常のパターン切り替え
+              const nextPattern = ATTACK_PATTERNS[nextAttackPatternIndex];
               console.log(`次の攻撃パターンへ移行: ${nextPattern.name} (持続時間: ${nextPattern.duration}ms)`);
               nextPatternTimeoutRef.current = setTimeout(switchToNextPattern, nextPattern.duration);
-              return { ...prev, currentAttackPatternIndex: nextIndex, attackTimer: nextPattern.duration / 1000 };
+              return {
+                  ...prev,
+                  currentAttackPatternIndex: nextAttackPatternIndex,
+                  attackTimer: nextPattern.duration / 1000,
+                  // attacks: [] // クリアしない
+              };
           }
       });
-  }, []);
+  }, []); // setGameState is stable
 
    // --- 戦闘開始処理 ---
-   const startBattle = useCallback(() => { /* ... (変更なし) ... */
+   const startBattle = useCallback(() => {
       // console.log("フェーズ戦闘: セットアップ開始。");
       setTimeout(() => battleBoxRef.current?.focus(), 0);
       if (!requestRef.current) { /* console.log("Restarting game loop for BATTLE phase."); */ lastUpdateTimeRef.current = 0; requestRef.current = requestAnimationFrame(gameLoop); }
       spawnIntervalRef.current = setInterval(spawnAttack, SPAWN_INTERVAL);
-      setGameState(prev => { if (ATTACK_PATTERNS.length > 0) { const idx = prev.currentAttackPatternIndex; const pattern = ATTACK_PATTERNS[idx]; if (pattern) { /* console.log(`現在の攻撃パターン開始: ${pattern.name}, ${pattern.duration}ms後に切り替え`); */ clearTimeout(nextPatternTimeoutRef.current); nextPatternTimeoutRef.current = setTimeout(switchToNextPattern, pattern.duration); return {...prev, attackTimer: pattern.duration / 1000}; } } return prev; });
+      setGameState(prev => {
+          if (ATTACK_PATTERNS.length > 0) {
+              const idx = prev.currentAttackPatternIndex; // ★ 現在のインデックスを使う
+              const pattern = ATTACK_PATTERNS[idx];
+              if (pattern) {
+                   console.log(`現在の攻撃パターン開始: ${pattern.name}, ${pattern.duration}ms後に切り替え`);
+                   clearTimeout(nextPatternTimeoutRef.current);
+                   nextPatternTimeoutRef.current = setTimeout(switchToNextPattern, pattern.duration);
+                   return {...prev, attackTimer: pattern.duration / 1000};
+              } else { console.warn("現在の攻撃パターンが見つかりません:", idx); return prev; }
+          }
+          return prev;
+      });
       attackTimerIntervalRef.current = setInterval(() => setGameState(prev => (prev.gamePhase === GamePhase.BATTLE ? { ...prev, attackTimer: Math.max(0, prev.attackTimer - 1) } : prev)), 1000);
       battleTimerIntervalRef.current = setInterval(() => setGameState(prev => { if (prev.gamePhase !== GamePhase.BATTLE) { clearInterval(battleTimerIntervalRef.current); return prev; } const newTime = prev.battleTimeRemaining - 1; if (newTime < 0) { clearInterval(battleTimerIntervalRef.current); resetGame(); return prev; } return { ...prev, battleTimeRemaining: newTime }; }), 1000);
   }, [spawnAttack, switchToNextPattern, gameLoop, resetGame]);
@@ -327,8 +364,8 @@ const App = () => {
       return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); };
   }, [handleKeyDown, handleKeyUp]);
 
-  // Main Game Phase Logic
-  useEffect(() => { /* ... (変更なし) ... */
+  // Main Game Phase Logic (★ INTERMISSION_DIALOGUE を追加)
+  useEffect(() => {
       const cleanup = () => {
           clearInterval(spawnIntervalRef.current); clearTimeout(nextPatternTimeoutRef.current); clearInterval(attackTimerIntervalRef.current); clearInterval(battleTimerIntervalRef.current);
           if (requestRef.current) { cancelAnimationFrame(requestRef.current); requestRef.current = null; }
@@ -337,13 +374,19 @@ const App = () => {
       };
       switch (gamePhase) {
           case GamePhase.PRELOAD: cleanup(); stopAudio(); break;
-          case GamePhase.DIALOGUE: cleanup(); lastUpdateTimeRef.current = 0; if (!requestRef.current) requestRef.current = requestAnimationFrame(gameLoop); startDialogueSequence(); setTimeout(() => battleBoxRef.current?.focus(), 0); if (Transport.state !== 'started' && toneStarted.current) Transport.start(); break;
-          case GamePhase.INTERMISSION_DIALOGUE: cleanup(); if (!requestRef.current) { lastUpdateTimeRef.current = 0; requestRef.current = requestAnimationFrame(gameLoop); } startDialogueSequence(); setTimeout(() => battleBoxRef.current?.focus(), 0); break;
-          case GamePhase.BATTLE: startBattle(); break;
+          case GamePhase.DIALOGUE: cleanup(); lastUpdateTimeRef.current = 0; if (!requestRef.current) requestRef.current = requestAnimationFrame(gameLoop); startDialogueSequence(); setTimeout(() => battleBoxRef.current?.focus(), 0); if (Tone.Transport.state !== 'started' && toneStarted.current) Tone.Transport.start(); break;
+          case GamePhase.INTERMISSION_DIALOGUE: // ★ 追加
+              cleanup(); // 戦闘タイマー等を停止
+              if (!requestRef.current) { lastUpdateTimeRef.current = 0; requestRef.current = requestAnimationFrame(gameLoop); } // ループは継続
+              startDialogueSequence(); // 中間ダイアログ開始
+              setTimeout(() => battleBoxRef.current?.focus(), 0);
+              break;
+          case GamePhase.BATTLE: startBattle(); break; // ★ BATTLE になったら startBattle を呼ぶ
           case GamePhase.GAMEOVER: cleanup(); stopAudio(); break;
           default: break;
       }
       return cleanup;
+  // ★ 依存配列を修正
   }, [gamePhase, startBattle, stopAudio, gameLoop, startDialogueSequence]);
 
 
