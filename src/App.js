@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart } from 'lucide-react';
-// ★ Tone.js のインポート方法を名前空間インポートに戻す
-import * as Tone from 'tone';
-// import Tone from 'tone'; // 前回の行
-// import { Synth, Sequence, Transport, start, context, now } from 'tone'; // 前々回の行
+// ★ Tone.js のインポート方法を名前付きインポートに戻す
+import { Synth, Sequence, Transport, start, context, now } from 'tone';
+// import * as Tone from 'tone'; // 前回の行
 
 // ============================================================================
 // --- 定数定義 (Constants) ---
@@ -15,7 +14,7 @@ const PLAYER_SPEED = 150; // ピクセル/秒
 const INITIAL_HP = 100;
 const SPAWN_INTERVAL = 400; // ms
 const BONE_SPEED = 4 * 60; // ピクセル/秒
-const DAMAGE_AMOUNT = 10; // ダメージ量 10
+const DAMAGE_AMOUNT = 10;
 const BOUNDARY_DAMAGE_INTERVAL = 500; // ms
 const TYPEWRITER_SPEED = 50; // ms
 const DELAY_BETWEEN_LINES = 700; // ms
@@ -198,43 +197,43 @@ const App = () => {
 
   // --- Audio Setup and Control (★ Tone 参照を修正) ---
   const setupAudio = useCallback(() => {
-    // ★ Tone.Synth -> Tone.Synth
-    synthRef.current = new Tone.Synth({ oscillator: { type: 'pulse', width: 0.5 }, envelope: { attack: 0.01, decay: 0.08, sustain: 0.1, release: 0.2 }, volume: -16 }).toDestination();
-    typingSynthRef.current = new Tone.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.001, decay: 0.03, sustain: 0, release: 0.05 }, volume: -22 }).toDestination();
+    // ★ Tone.Synth -> Synth
+    synthRef.current = new Synth({ oscillator: { type: 'pulse', width: 0.5 }, envelope: { attack: 0.01, decay: 0.08, sustain: 0.1, release: 0.2 }, volume: -16 }).toDestination();
+    typingSynthRef.current = new Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.001, decay: 0.03, sustain: 0, release: 0.05 }, volume: -22 }).toDestination();
     const notes = [ "C3", null, "E3", "G3", "C3", null, "E3", "G3", "A2", null, "C3", "E3", "A2", null, "C3", "E3", "F2", null, "A2", "C3", "F2", null, "A2", "C3", "G2", null, "B2", "D3", "G2", "B2", "D3", "G2" ];
-    // ★ Tone.Sequence -> Tone.Sequence
-    bgmLoopRef.current = new Tone.Sequence((time, note) => { if (note && synthRef.current) { synthRef.current.triggerAttackRelease(note, "16n", time); } }, notes, "16n").start(0);
+    // ★ Tone.Sequence -> Sequence
+    bgmLoopRef.current = new Sequence((time, note) => { if (note && synthRef.current) { synthRef.current.triggerAttackRelease(note, "16n", time); } }, notes, "16n").start(0);
     bgmLoopRef.current.loop = true;
-    // ★ Tone.Transport -> Tone.Transport
-    Tone.Transport.bpm.value = 104;
+    // ★ Tone.Transport -> Transport
+    Transport.bpm.value = 104;
    }, []);
 
   const startAudio = useCallback(async () => {
     if (!toneStarted.current) {
         try {
-            await Tone.start(); // ★ Tone.start
+            await start(); // ★ Tone.start -> start
             toneStarted.current = true;
             setupAudio();
-            Tone.Transport.start(); // ★ Tone.Transport
+            Transport.start(); // ★ Tone.Transport -> Transport
         } catch (e) { console.error("Tone.jsの開始に失敗:", e); }
-    // ★ Tone.Transport -> Tone.Transport
-    } else if (Tone.Transport.state !== 'started') {
-        Tone.Transport.start();
+    // ★ Tone.Transport -> Transport
+    } else if (Transport.state !== 'started') {
+        Transport.start();
     }
    }, [setupAudio]);
 
   const stopAudio = useCallback(() => {
-      // ★ Tone.Transport -> Tone.Transport
-      if (Tone.Transport.state === 'started') { Tone.Transport.stop(); }
+      // ★ Tone.Transport -> Transport
+      if (Transport.state === 'started') { Transport.stop(); }
       bgmLoopRef.current?.dispose(); synthRef.current?.dispose(); typingSynthRef.current?.dispose();
       bgmLoopRef.current = null; synthRef.current = null; typingSynthRef.current = null;
       clearTimeout(invincibilityTimerRef.current);
    }, []);
 
   const playTypingSound = useCallback(() => {
-      // ★ Tone.context -> Tone.context, Tone.now -> Tone.now
-      if (typingSynthRef.current && Tone.context.state === 'running') {
-          typingSynthRef.current.triggerAttackRelease("C5", "16n", Tone.now());
+      // ★ context -> context, now -> now
+      if (typingSynthRef.current && context.state === 'running') {
+          typingSynthRef.current.triggerAttackRelease("C5", "16n", now());
       }
    }, []);
 
@@ -338,14 +337,13 @@ const App = () => {
       };
       switch (gamePhase) {
           case GamePhase.PRELOAD: cleanup(); stopAudio(); break;
-          case GamePhase.DIALOGUE: cleanup(); lastUpdateTimeRef.current = 0; if (!requestRef.current) requestRef.current = requestAnimationFrame(gameLoop); startDialogueSequence(); setTimeout(() => battleBoxRef.current?.focus(), 0); if (Tone.Transport.state !== 'started' && toneStarted.current) Tone.Transport.start(); break;
+          case GamePhase.DIALOGUE: cleanup(); lastUpdateTimeRef.current = 0; if (!requestRef.current) requestRef.current = requestAnimationFrame(gameLoop); startDialogueSequence(); setTimeout(() => battleBoxRef.current?.focus(), 0); if (Transport.state !== 'started' && toneStarted.current) Transport.start(); break;
           case GamePhase.INTERMISSION_DIALOGUE: cleanup(); if (!requestRef.current) { lastUpdateTimeRef.current = 0; requestRef.current = requestAnimationFrame(gameLoop); } startDialogueSequence(); setTimeout(() => battleBoxRef.current?.focus(), 0); break;
           case GamePhase.BATTLE: startBattle(); break;
           case GamePhase.GAMEOVER: cleanup(); stopAudio(); break;
           default: break;
       }
       return cleanup;
-  // ★ 依存配列を修正
   }, [gamePhase, startBattle, stopAudio, gameLoop, startDialogueSequence]);
 
 
@@ -406,4 +404,3 @@ const App = () => {
 };
 
 export default App;
-
