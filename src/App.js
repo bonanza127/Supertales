@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart } from 'lucide-react';
-import * as Tone from 'tone'; // ビルドエラー解消のため namespace import に戻す
+import * as Tone from 'tone'; // Namespace import
 
 // ============================================================================
 // --- 定数定義 (Constants) ---
@@ -10,9 +10,9 @@ const BATTLE_BOX_HEIGHT = 150;
 const PLAYER_SIZE = 20;
 const PLAYER_SPEED = 150; // ピクセル/秒
 const INITIAL_HP = 100;
-const SPAWN_INTERVAL = 400; // ms
+const SPAWN_INTERVAL = 300; // ms
 const BONE_SPEED = 4 * 60; // ピクセル/秒
-const DAMAGE_AMOUNT = 10;
+const DAMAGE_AMOUNT = 5; // 基本ダメージ量
 const BOUNDARY_DAMAGE_INTERVAL = 500; // ms
 const TYPEWRITER_SPEED = 50; // ms
 const DELAY_BETWEEN_LINES = 700; // ms
@@ -22,24 +22,30 @@ const GASTER_WARN_DURATION = 800; // ms 警告時間
 const GASTER_BEAM_DURATION = 250; // ms ビーム持続時間
 const GASTER_WIDTH = 30; // ビームの幅（または高さ）
 const INVINCIBILITY_DURATION = 600; // 無敵時間 (ms)
+const VERTICAL_BONE_WIDTH = 10;
+const VERTICAL_BONE_HEIGHT = 60;
+const HORIZONTAL_BONE_WIDTH = 60;
+const HORIZONTAL_BONE_HEIGHT = 10;
+const LIFT_WIDTH = 100;
+const LIFT_HEIGHT = 10;
+const PLATFORM_LIFT_SPEED = 3 * 60; // ピクセル/秒
 
 // --- 攻撃パターン定義 ---
 const ATTACK_PATTERNS = [
     { name: '横方向の骨', duration: 4500, type: 'BONES_HORIZONTAL' },
-    { name: '上昇ひし形骨', duration: 5500, type: 'BONES_RISING' },
+    { name: '縦方向の骨', duration: 4500, type: 'BONES_VERTICAL' }, // ★ 上昇骨から変更
     { name: 'ゲスターブラスター', duration: 6000, type: 'GASTER_BLASTER' },
-    { name: '縦方向の骨', duration: 4500, type: 'BONES_VERTICAL' },
+    { name: '左右分割リフト', duration: 8000, type: 'SPLIT_LIFTS' },
 ];
 
 // --- 英語セリフ ---
-const DIALOGUE_LINES = [
+const DIALOGUE_LINES = [ /* ... (変更なし) ... */
     "it’s a beautiful day outside.",
     "bulls are raging, bears are crying...",
     "on days like these, projects like you...",
     "Should go to the moon."
 ];
-// ★ 中間ダイアログ用のセリフ定義を追加
-const INTERMISSION_DIALOGUE_LINES = [
+const INTERMISSION_DIALOGUE_LINES = [ /* ... (変更なし) ... */
     "*Huff... puff...*",
     "PEPE seems tired of trading memecoins."
 ];
@@ -48,7 +54,7 @@ const INTERMISSION_DIALOGUE_LINES = [
 const GamePhase = { PRELOAD: '準備中', DIALOGUE: '会話', BATTLE: '戦闘', INTERMISSION_DIALOGUE: '幕間会話', GAMEOVER: 'ゲームオーバー' };
 
 // --- 初期状態 ---
-const getInitialState = () => ({
+const getInitialState = () => ({ /* ... (変更なし) ... */
     gamePhase: GamePhase.PRELOAD,
     showDialogue: false,
     displayedDialogue: "",
@@ -81,6 +87,7 @@ const AttackRenderer = React.memo(({ attack }) => { /* ... (変更なし) ... */
         case 'gaster_warning': return <div key={attack.id} className="gaster-warning" style={{ left: `${attack.x}px`, top: `${attack.y}px`, width: `${attack.width}px`, height: `${attack.height}px` }}></div>;
         case 'gaster_beam': return <div key={attack.id} className="gaster-beam" style={{ left: `${attack.x}px`, top: `${attack.y}px`, width: `${attack.width}px`, height: `${attack.height}px` }}></div>;
         case 'bone': case 'bone_v': return ( <div key={attack.id} className="attack-bone" style={{ left: `${attack.x}px`, top: `${attack.y}px`, width: `${attack.width}px`, height: `${attack.height}px` }} /> );
+        case 'platform': return ( <div key={attack.id} className="attack-platform" style={{ left: `${attack.x}px`, top: `${attack.y}px`, width: `${attack.width}px`, height: `${attack.height}px` }} /> );
         default: return null;
     }
 });
@@ -105,6 +112,7 @@ const App = () => {
   const synthRef = useRef(null); const bgmLoopRef = useRef(null); const typingSynthRef = useRef(null); const toneStarted = useRef(false);
   const gamePhaseRef = useRef(gamePhase); const battleBoxRef = useRef(null); const playerPositionRef = useRef(gameState.battlePlayerPosition); const playerHitInLastFrame = useRef(false); const battleTimerIntervalRef = useRef(null);
   const invincibilityTimerRef = useRef(null);
+  const nextLiftSideRef = useRef('left'); // ★ リフトの左右を管理する Ref ('left' or 'right')
 
   // --- Core Logic Callbacks (Memoized) ---
 
@@ -136,24 +144,40 @@ const App = () => {
         });
    }, [endInvincibility]);
 
-  // Spawn Attack
-   const spawnAttack = useCallback(() => { /* ... (変更なし) ... */
+  // Spawn Attack (★ SPLIT_LIFTS 修正)
+   const spawnAttack = useCallback(() => {
         if (gamePhaseRef.current !== GamePhase.BATTLE) return;
         setGameState(prev => {
             const currentPattern = ATTACK_PATTERNS[prev.currentAttackPatternIndex];
             if (!currentPattern) return prev;
             let newAttacksToAdd = []; const idBase = Date.now() + Math.random();
             switch (currentPattern.type) {
-                case 'BONES_HORIZONTAL': { const y = Math.random() * (BATTLE_BOX_HEIGHT - 10); const d = Math.random() < 0.5 ? 'l' : 'r'; newAttacksToAdd.push({ id: idBase, type: 'bone', x: d === 'l' ? -60 : BATTLE_BOX_WIDTH, y, width: 60, height: 10, speed: BONE_SPEED * (d === 'l' ? 1 : -1), color: 'white' }); break; }
-                case 'BONES_RISING': { const x = Math.random() * (BATTLE_BOX_WIDTH - 10); newAttacksToAdd.push({ id: idBase, type: 'bone_v', x, y: BATTLE_BOX_HEIGHT, width: 10, height: 60, speed: -BONE_SPEED, color: 'white' }); break; }
-                case 'BONES_VERTICAL': { const x = Math.random() * (BATTLE_BOX_WIDTH - 10); const d = Math.random() < 0.5 ? 't' : 'b'; newAttacksToAdd.push({ id: idBase, type: 'bone_v', x, y: d === 't' ? -60 : BATTLE_BOX_HEIGHT, width: 10, height: 60, speed: BONE_SPEED * (d === 't' ? 1 : -1), color: 'white' }); break; }
-                case 'GASTER_BLASTER': { const side = ['left', 'right', 'top', 'bottom'][Math.floor(Math.random() * 4)]; let x = 0, y = 0, w = 0, h = 0; let o = 'h'; if (side === 'left' || side === 'right') { o = 'h'; w = BATTLE_BOX_WIDTH; h = GASTER_WIDTH; x = 0; y = Math.random() * (BATTLE_BOX_HEIGHT - h); } else { o = 'v'; h = BATTLE_BOX_HEIGHT; w = GASTER_WIDTH; y = 0; x = Math.random() * (BATTLE_BOX_WIDTH - w); } newAttacksToAdd.push({ id: idBase, type: 'gaster_warning', x, y, width: w, height: h, orientation: o, warnTimer: GASTER_WARN_DURATION }); break; }
+                case 'BONES_HORIZONTAL': { const y = Math.random() * (BATTLE_BOX_HEIGHT - HORIZONTAL_BONE_HEIGHT); const d = Math.random() < 0.5 ? 'l' : 'r'; newAttacksToAdd.push({ id: idBase, type: 'bone', x: d === 'l' ? -HORIZONTAL_BONE_WIDTH : BATTLE_BOX_WIDTH, y, width: HORIZONTAL_BONE_WIDTH, height: HORIZONTAL_BONE_HEIGHT, speed: BONE_SPEED * (d === 'l' ? 1 : -1), color: 'white' }); break; }
+                case 'BONES_RISING': { const x = Math.random() * (BATTLE_BOX_WIDTH - VERTICAL_BONE_WIDTH); newAttacksToAdd.push({ id: idBase, type: 'bone_v', x, y: BATTLE_BOX_HEIGHT, width: VERTICAL_BONE_WIDTH, height: VERTICAL_BONE_HEIGHT, speed: -BONE_SPEED, color: 'white' }); break; }
+                case 'BONES_VERTICAL': { const x = Math.random() * (BATTLE_BOX_WIDTH - VERTICAL_BONE_WIDTH); const d = Math.random() < 0.5 ? 't' : 'b'; newAttacksToAdd.push({ id: idBase, type: 'bone_v', x, y: d === 't' ? -VERTICAL_BONE_HEIGHT : BATTLE_BOX_HEIGHT, width: VERTICAL_BONE_WIDTH, height: VERTICAL_BONE_HEIGHT, speed: BONE_SPEED * (d === 't' ? 1 : -1), color: 'white' }); break; }
+                case 'GASTER_BLASTER': { if (Math.random() < 0.6) { const side = ['left', 'right', 'top', 'bottom'][Math.floor(Math.random() * 4)]; let x = 0, y = 0, w = 0, h = 0; let o = 'h'; if (side === 'left' || side === 'right') { o = 'h'; w = BATTLE_BOX_WIDTH; h = GASTER_WIDTH; x = 0; y = Math.random() * (BATTLE_BOX_HEIGHT - h); } else { o = 'v'; h = BATTLE_BOX_HEIGHT; w = GASTER_WIDTH; y = 0; x = Math.random() * (BATTLE_BOX_WIDTH - w); } newAttacksToAdd.push({ id: idBase, type: 'gaster_warning', x, y, width: w, height: h, orientation: o, warnTimer: GASTER_WARN_DURATION }); } break; }
+                // ★ SPLIT_LIFTS のスポーンロジック修正 (交互生成)
+                case 'SPLIT_LIFTS': {
+                    const currentSide = nextLiftSideRef.current; // 次に出す側を取得
+                    if (currentSide === 'left') {
+                        // 左半分（下から上に昇るリフト）
+                        const x = Math.random() * (BATTLE_BOX_WIDTH / 2 - LIFT_WIDTH);
+                        newAttacksToAdd.push({ id: idBase + '_l', type: 'platform', x, y: BATTLE_BOX_HEIGHT, width: LIFT_WIDTH, height: LIFT_HEIGHT, speed: -PLATFORM_LIFT_SPEED, color: 'blue' });
+                        nextLiftSideRef.current = 'right'; // 次は右
+                    } else {
+                        // 右半分（上から下に降るリフト）
+                        const x = BATTLE_BOX_WIDTH / 2 + Math.random() * (BATTLE_BOX_WIDTH / 2 - LIFT_WIDTH);
+                        newAttacksToAdd.push({ id: idBase + '_r', type: 'platform', x, y: -LIFT_HEIGHT, width: LIFT_WIDTH, height: LIFT_HEIGHT, speed: PLATFORM_LIFT_SPEED, color: 'blue' });
+                        nextLiftSideRef.current = 'left'; // 次は左
+                    }
+                    break;
+                }
                 default: break;
             }
             if (newAttacksToAdd.length > 0) return { ...prev, attacks: [...prev.attacks, ...newAttacksToAdd] };
             return prev;
         });
-   }, []);
+   }, []); // setGameState is stable
 
   // Game Loop
   const gameLoop = useCallback((timestamp) => { /* ... (変更なし) ... */
@@ -168,7 +192,7 @@ const App = () => {
     setGameState(prev => {
         const currentlyInvincible = prev.isInvincible;
         let newState = { ...prev }; let newBattlePlayerPosition;
-        if (prev.gamePhase === GamePhase.DIALOGUE || prev.gamePhase === GamePhase.BATTLE || prev.gamePhase === GamePhase.INTERMISSION_DIALOGUE) { // Allow movement during intermission
+        if (prev.gamePhase === GamePhase.DIALOGUE || prev.gamePhase === GamePhase.BATTLE || prev.gamePhase === GamePhase.INTERMISSION_DIALOGUE) {
             let dx = 0; const hs = PLAYER_SPEED * deltaSeconds; if (pressedKeys.current['ArrowLeft'] || pressedKeys.current['KeyA']) dx -= hs; if (pressedKeys.current['ArrowRight'] || pressedKeys.current['KeyD']) dx += hs; let newX = playerPositionRef.current.x + dx; newX = Math.max(0, Math.min(newX, BATTLE_BOX_WIDTH - PLAYER_SIZE));
             let newY = playerPositionRef.current.y; const vs = PLAYER_SPEED * deltaSeconds; let dy = 0; if (pressedKeys.current['ArrowUp'] || pressedKeys.current['KeyW']) dy -= vs; if (pressedKeys.current['ArrowDown'] || pressedKeys.current['KeyS']) dy += vs; newY += dy; newY = Math.max(0, Math.min(newY, BATTLE_BOX_HEIGHT - PLAYER_SIZE));
             newBattlePlayerPosition = { x: newX, y: newY }; newState.battlePlayerPosition = newBattlePlayerPosition;
@@ -178,7 +202,7 @@ const App = () => {
         if (prev.gamePhase === GamePhase.BATTLE) {
             updatedAttacks = prev.attacks.map(a => {
                 let ua = { ...a };
-                switch (a.type) { case 'bone': ua.x += ua.speed * deltaSeconds; break; case 'bone_v': ua.y += ua.speed * deltaSeconds; break; default: break; }
+                switch (a.type) { case 'bone': ua.x += ua.speed * deltaSeconds; break; case 'bone_v': ua.y += ua.speed * deltaSeconds; break; case 'platform': ua.y += ua.speed * deltaSeconds; break; default: break; }
                 if (a.lifetime !== undefined) { ua.lifetime -= deltaTime; if (ua.lifetime <= 0) attacksToRemoveThisFrame.add(a.id); }
                 if (a.warnTimer !== undefined) { ua.warnTimer -= deltaTime; if (ua.warnTimer <= 0 && !attacksToRemoveThisFrame.has(a.id)) { attacksToRemoveThisFrame.add(a.id); let bx, by, bw, bh; if (a.orientation === 'h') { bw = BATTLE_BOX_WIDTH; bh = GASTER_WIDTH; by = a.y + a.height/2 - bh/2; bx = 0; } else { bh = BATTLE_BOX_HEIGHT; bw = GASTER_WIDTH; bx = a.x + a.width/2 - bw/2; by = 0; } attacksToAddThisFrame.push({ id: a.id + '_beam', type: 'gaster_beam', x: bx, y: by, width: bw, height: bh, lifetime: GASTER_BEAM_DURATION, color: 'white' }); } }
                 return ua;
@@ -187,7 +211,7 @@ const App = () => {
             const playerRect = { x: newBattlePlayerPosition.x, y: newBattlePlayerPosition.y }; let finalAttacks = [];
             for (const attack of updatedAttacks) { if (attacksToRemoveThisFrame.has(attack.id)) continue; if (!currentlyInvincible && !hitDetectedThisFrame && checkBattleCollision(playerRect, attack)) { hitDetectedThisFrame = true; if (attack.type !== 'gaster_beam') { attacksToRemoveThisFrame.add(attack.id); continue; } } finalAttacks.push(attack); }
             newState.attacks = [...finalAttacks.filter(a => !attacksToRemoveThisFrame.has(a.id)), ...attacksToAddThisFrame];
-        } else { newState.attacks = prev.attacks; } // Keep attacks during intermission
+        } else { newState.attacks = prev.attacks; }
         playerHitInLastFrame.current = hitDetectedThisFrame;
         const outside = newBattlePlayerPosition.x < 0 || newBattlePlayerPosition.x + PLAYER_SIZE > BATTLE_BOX_WIDTH || newBattlePlayerPosition.y < 0 || newBattlePlayerPosition.y + PLAYER_SIZE > BATTLE_BOX_HEIGHT;
         newState.isOutsideBounds = outside;
@@ -219,57 +243,30 @@ const App = () => {
   const playTypingSound = useCallback(() => { if (Tone && typingSynthRef.current && Tone.context.state === 'running') { typingSynthRef.current.triggerAttackRelease("C5", "16n", Tone.now()); } }, []);
 
 
-  // --- Dialogue Sequence Logic (★ 中間ダイアログ対応) ---
-  const typeNextLine = useCallback(() => {
+  // --- Dialogue Sequence Logic ---
+  const typeNextLine = useCallback(() => { /* ... (変更なし) ... */
       setGameState(prev => {
-          // ★ 現在のフェーズに応じて使用するセリフを決定
+          if (prev.gamePhase !== GamePhase.DIALOGUE && prev.gamePhase !== GamePhase.INTERMISSION_DIALOGUE) return prev;
           const currentLines = prev.gamePhase === GamePhase.INTERMISSION_DIALOGUE ? INTERMISSION_DIALOGUE_LINES : DIALOGUE_LINES;
           const currentPhase = prev.gamePhase;
-
-          if (currentPhase !== GamePhase.DIALOGUE && currentPhase !== GamePhase.INTERMISSION_DIALOGUE) return prev;
-
           const lineIndex = prev.currentLineIndex;
           if (lineIndex >= currentLines.length) {
-              console.log("セリフ終了。");
-              if (currentPhase === GamePhase.INTERMISSION_DIALOGUE) {
-                  console.log("中間ダイアログ終了。戦闘再開、次の攻撃へ:", prev.nextAttackIndex);
-                  return {
-                      ...prev,
-                      gamePhase: GamePhase.BATTLE, // 戦闘フェーズに戻す
-                      showDialogue: false,
-                      currentAttackPatternIndex: prev.nextAttackIndex, // ★ 保存しておいた次のインデックスを設定
-                      nextAttackIndex: null, // クリア
-                      // attacks: [] // 攻撃はクリアしない
-                  };
-              } else {
-                  console.log("会話終了。戦闘フェーズへ移行します。");
-                  const initialBattlePosition = { x: BATTLE_BOX_WIDTH / 2 - PLAYER_SIZE / 2, y: BATTLE_BOX_HEIGHT / 2 - PLAYER_SIZE / 2 };
-                  playerPositionRef.current = initialBattlePosition;
-                  return {
-                      ...prev,
-                      gamePhase: GamePhase.BATTLE,
-                      showDialogue: false,
-                      battlePlayerPosition: initialBattlePosition
-                  };
-              }
+              if (currentPhase === GamePhase.INTERMISSION_DIALOGUE) { return { ...prev, gamePhase: GamePhase.BATTLE, showDialogue: false, currentAttackPatternIndex: prev.nextAttackIndex, nextAttackIndex: null }; }
+              else { const initPos = { x: BATTLE_BOX_WIDTH / 2 - PLAYER_SIZE / 2, y: BATTLE_BOX_HEIGHT / 2 - PLAYER_SIZE / 2 }; playerPositionRef.current = initPos; return { ...prev, gamePhase: GamePhase.BATTLE, showDialogue: false, battlePlayerPosition: initPos }; }
           }
-
           const fullText = currentLines[lineIndex]; let charIndex = 0;
           clearInterval(typewriterIntervalRef.current); clearTimeout(nextLineTimeoutRef.current);
-          // console.log(`セリフ ${lineIndex + 1} を開始 (${currentPhase})`);
           typewriterIntervalRef.current = setInterval(() => {
               setGameState(currentInternalState => {
                   if (currentInternalState.gamePhase !== currentPhase) { clearInterval(typewriterIntervalRef.current); return currentInternalState; }
                   if (charIndex < fullText.length) { if(currentInternalState.displayedDialogue.length < fullText.length) playTypingSound(); const nextDisplayed = fullText.substring(0, charIndex + 1); charIndex++; return { ...currentInternalState, displayedDialogue: nextDisplayed }; }
-                  else { clearInterval(typewriterIntervalRef.current); /* console.log(`セリフ ${lineIndex + 1} を完了 (${currentPhase})`); */ nextLineTimeoutRef.current = setTimeout(typeNextLine, DELAY_BETWEEN_LINES); return currentInternalState; }
+                  else { clearInterval(typewriterIntervalRef.current); nextLineTimeoutRef.current = setTimeout(typeNextLine, DELAY_BETWEEN_LINES); return currentInternalState; }
               });
           }, TYPEWRITER_SPEED);
           return { ...prev, displayedDialogue: "", showDialogue: true, currentLineIndex: lineIndex + 1 };
       });
-  }, [playTypingSound]); // setGameState is stable
-
-  // ★ startDialogueSequence は変更なし (typeNextLine がフェーズを見て判断)
-  const startDialogueSequence = useCallback(() => {
+  }, [playTypingSound]);
+  const startDialogueSequence = useCallback(() => { /* ... (変更なし) ... */
       clearTimeout(nextLineTimeoutRef.current); clearInterval(typewriterIntervalRef.current);
       setGameState(prev => ({ ...prev, currentLineIndex: 0, displayedDialogue: "", showDialogue: true }));
       typeNextLine();
@@ -277,11 +274,12 @@ const App = () => {
 
 
   // --- Game Start & Reset Logic ---
-  const resetGame = useCallback(() => { /* ... (変更なし) ... */
+  const resetGame = useCallback(() => { /* ... (★ nextLiftSideRef リセット追加) ... */
       console.log("ゲームをリセットします..."); stopAudio();
       clearInterval(spawnIntervalRef.current); clearTimeout(nextPatternTimeoutRef.current); clearInterval(attackTimerIntervalRef.current); clearTimeout(boundaryDamageTimerRef.current); clearInterval(battleTimerIntervalRef.current); clearInterval(typewriterIntervalRef.current); clearTimeout(nextLineTimeoutRef.current);
       cancelAnimationFrame(requestRef.current); requestRef.current = null;
       const initialState = getInitialState(); setGameState(initialState); playerPositionRef.current = initialState.battlePlayerPosition; gamePhaseRef.current = GamePhase.PRELOAD; pressedKeys.current = {}; lastUpdateTimeRef.current = 0; toneStarted.current = false;
+      nextLiftSideRef.current = 'left'; // ★ リフト方向リセット
       console.log("ゲームのリセット完了。");
   }, [stopAudio]);
   const handleStartGame = useCallback(async () => { /* ... (変更なし) ... */
@@ -294,7 +292,7 @@ const App = () => {
   const handleKeyDown = useCallback((event) => { if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)) pressedKeys.current[event.code] = true; }, []);
   const handleKeyUp = useCallback((event) => { if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)) pressedKeys.current[event.code] = false; }, []);
 
-  // --- Attack Pattern Switching Logic (★ 中間ダイアログへの遷移を追加) ---
+  // --- Attack Pattern Switching Logic (★ 中間ダイアログ遷移修正) ---
   const switchToNextPattern = useCallback(() => {
       clearTimeout(nextPatternTimeoutRef.current);
       setGameState(prev => {
@@ -305,14 +303,14 @@ const App = () => {
           const nextIndexRaw = currentPatternIndex + 1;
           const nextAttackPatternIndex = nextIndexRaw % ATTACK_PATTERNS.length;
 
-          // ★ 3番目(index 2)の攻撃が終わった後か？
+          // ★ 3番目(index 2 / Gaster Blaster) の攻撃が終わった後か？
           if (currentPatternIndex === 2) {
               console.log("攻撃パターン3終了。中間ダイアログへ移行。");
               return {
                   ...prev,
-                  gamePhase: GamePhase.INTERMISSION_DIALOGUE, // 中間ダイアログフェーズへ
-                  nextAttackIndex: nextAttackPatternIndex, // 次の攻撃インデックスを保存
-                  attacks: [], // 画面上の攻撃をクリア
+                  gamePhase: GamePhase.INTERMISSION_DIALOGUE,
+                  nextAttackIndex: nextAttackPatternIndex, // ★ 次は index 3 (左右分割リフト)
+                  attacks: [], // 画面クリア
                   showDialogue: true,
                   currentLineIndex: 0,
                   displayedDialogue: "",
@@ -326,7 +324,7 @@ const App = () => {
                   ...prev,
                   currentAttackPatternIndex: nextAttackPatternIndex,
                   attackTimer: nextPattern.duration / 1000,
-                  // attacks: [] // クリアしない
+                  // isScrollingAttackActive: nextPattern.type === 'SPLIT_LIFTS' // isScrollingAttackActive 削除
               };
           }
       });
@@ -340,14 +338,15 @@ const App = () => {
       spawnIntervalRef.current = setInterval(spawnAttack, SPAWN_INTERVAL);
       setGameState(prev => {
           if (ATTACK_PATTERNS.length > 0) {
-              const idx = prev.currentAttackPatternIndex; // ★ 現在のインデックスを使う
+              const idx = prev.currentAttackPatternIndex; // 中間ダイアログ後に設定されたインデックス
               const pattern = ATTACK_PATTERNS[idx];
               if (pattern) {
-                   console.log(`現在の攻撃パターン開始: ${pattern.name}, ${pattern.duration}ms後に切り替え`);
+                   // console.log(`現在の攻撃パターン開始: ${pattern.name}, ${pattern.duration}ms後に切り替え`);
                    clearTimeout(nextPatternTimeoutRef.current);
                    nextPatternTimeoutRef.current = setTimeout(switchToNextPattern, pattern.duration);
-                   return {...prev, attackTimer: pattern.duration / 1000};
-              } else { console.warn("現在の攻撃パターンが見つかりません:", idx); return prev; }
+                   // isScrollingAttackActive 削除
+                   return {...prev, attackTimer: pattern.duration / 1000 };
+              }
           }
           return prev;
       });
@@ -364,8 +363,8 @@ const App = () => {
       return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); };
   }, [handleKeyDown, handleKeyUp]);
 
-  // Main Game Phase Logic (★ INTERMISSION_DIALOGUE を追加)
-  useEffect(() => {
+  // Main Game Phase Logic
+  useEffect(() => { /* ... (変更なし) ... */
       const cleanup = () => {
           clearInterval(spawnIntervalRef.current); clearTimeout(nextPatternTimeoutRef.current); clearInterval(attackTimerIntervalRef.current); clearInterval(battleTimerIntervalRef.current);
           if (requestRef.current) { cancelAnimationFrame(requestRef.current); requestRef.current = null; }
@@ -375,28 +374,13 @@ const App = () => {
       switch (gamePhase) {
           case GamePhase.PRELOAD: cleanup(); stopAudio(); break;
           case GamePhase.DIALOGUE: cleanup(); lastUpdateTimeRef.current = 0; if (!requestRef.current) requestRef.current = requestAnimationFrame(gameLoop); startDialogueSequence(); setTimeout(() => battleBoxRef.current?.focus(), 0); if (Tone.Transport.state !== 'started' && toneStarted.current) Tone.Transport.start(); break;
-          case GamePhase.INTERMISSION_DIALOGUE: // ★ 追加
-              cleanup(); // 戦闘タイマー等を停止
-              if (!requestRef.current) { lastUpdateTimeRef.current = 0; requestRef.current = requestAnimationFrame(gameLoop); } // ループは継続
-              startDialogueSequence(); // 中間ダイアログ開始
-              setTimeout(() => battleBoxRef.current?.focus(), 0);
-              break;
-          case GamePhase.BATTLE: startBattle(); break; // ★ BATTLE になったら startBattle を呼ぶ
+          case GamePhase.INTERMISSION_DIALOGUE: cleanup(); if (!requestRef.current) { lastUpdateTimeRef.current = 0; requestRef.current = requestAnimationFrame(gameLoop); } startDialogueSequence(); setTimeout(() => battleBoxRef.current?.focus(), 0); break;
+          case GamePhase.BATTLE: startBattle(); break;
           case GamePhase.GAMEOVER: cleanup(); stopAudio(); break;
           default: break;
       }
       return cleanup;
-  // ★ 依存配列を修正
-  }, [gamePhase, startBattle, stopAudio, gameLoop, startDialogueSequence]);
-
-
-   // Out-of-bounds damage handling
-   useEffect(() => { /* ... (変更なし) ... */
-        if (gamePhase !== GamePhase.BATTLE) { clearTimeout(boundaryDamageTimerRef.current); boundaryDamageTimerRef.current = null; return; }
-        if (isOutsideBounds) { if (!boundaryDamageTimerRef.current) { applyDamage(DAMAGE_AMOUNT / 2); boundaryDamageTimerRef.current = setTimeout(() => { boundaryDamageTimerRef.current = null; }, BOUNDARY_DAMAGE_INTERVAL); } }
-        else { clearTimeout(boundaryDamageTimerRef.current); boundaryDamageTimerRef.current = null; }
-        return () => clearTimeout(boundaryDamageTimerRef.current);
-   }, [isOutsideBounds, gamePhase, applyDamage]);
+  }, [gamePhase, startBattle, stopAudio, gameLoop, startDialogueSequence]); // resetGame は依存不要
 
    // Audio Cleanup on Unmount
    useEffect(() => { return () => { stopAudio(); toneStarted.current = false; }; }, [stopAudio]);
@@ -407,6 +391,7 @@ const App = () => {
         <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white font-mono select-none p-4">
           {/* スタイル定義 */}
           <style>{`
+            /* ... (変更なし) ... */
             .pixelated { image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges; }
             body { font-family: 'Courier New', Courier, monospace; background-color: black; }
             button:focus, [tabindex="0"]:focus { outline: 2px solid orange; outline-offset: 2px; }
@@ -416,7 +401,7 @@ const App = () => {
             .dialogue-box p::after { content: '_'; font-family: "Comic Sans MS", sans-serif; opacity: ${showDialogue ? 1 : 0}; animation: blink 1s step-end infinite; margin-left: 1px; }
             @keyframes blink { 50% { opacity: 0; } }
             .attack-bone { position: absolute; background-color: white; clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%); }
-            .attack-platform { position: absolute; background-color: blue; }
+            .attack-platform { position: absolute; background-color: #60a5fa; border: 1px solid #2563eb; }
             .gaster-warning { position: absolute; border: 2px dashed rgba(255, 255, 255, 0.7); box-sizing: border-box; z-index: 15; animation: blink-warning 0.2s linear infinite alternate; }
             @keyframes blink-warning { 0% { border-color: rgba(255, 255, 255, 0.7); } 100% { border-color: rgba(255, 255, 255, 0.2); } }
             .gaster-beam { position: absolute; background-color: rgba(255, 255, 255, 0.9); box-shadow: 0 0 10px 5px rgba(255, 255, 255, 0.5); z-index: 5; }
@@ -447,3 +432,4 @@ const App = () => {
 };
 
 export default App;
+
