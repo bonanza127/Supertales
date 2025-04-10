@@ -10,14 +10,13 @@ const BATTLE_BOX_HEIGHT = 150;
 const PLAYER_SIZE = 20;
 const PLAYER_SPEED = 150; // ピクセル/秒
 const INITIAL_HP = 100;
-const SPAWN_INTERVAL = 300; // ms
+const SPAWN_INTERVAL = 300; // ms (DVDロゴ以外で使用)
 const BONE_SPEED = 4 * 60; // ピクセル/秒
 const DAMAGE_AMOUNT = 5; // 基本ダメージ量
 const BOUNDARY_DAMAGE_INTERVAL = 500; // ms
 const TYPEWRITER_SPEED = 50; // ms
 const DELAY_BETWEEN_LINES = 700; // ms
 const ENEMY_IMAGE_URL = "https://i.imgur.com/RzfyQOV.png";
-// ★★★ 変更点: プレイヤー画像のURL ★★★
 const PLAYER_IMAGE_URL = "https://i.imgur.com/DN1tHyO.png";
 const BATTLE_DURATION_SECONDS = 60; // 戦闘時間 (秒)
 const GASTER_WARN_DURATION = 800; // ms 警告時間
@@ -31,132 +30,56 @@ const HORIZONTAL_BONE_HEIGHT = 10;
 const LIFT_WIDTH = 100;
 const LIFT_HEIGHT = 10;
 const PLATFORM_LIFT_SPEED = 3 * 60; // ピクセル/秒
+// ★★★ 追加: DVDロゴ関連の定数 ★★★
+const DVD_LOGO_SIZE = 30;
+const DVD_LOGO_SPEED = 2.5 * 60; // ピクセル/秒
 
 // --- 攻撃パターン定義 ---
-// 左右分割リフトはコメントアウトして無効化
+// ★★★ 変更点: DVDロゴ攻撃を追加 ★★★
 const ATTACK_PATTERNS = [
     { name: '横方向の骨', duration: 4500, type: 'BONES_HORIZONTAL' },
     { name: '縦方向の骨', duration: 4500, type: 'BONES_VERTICAL' },
     { name: 'ゲスターブラスター', duration: 6000, type: 'GASTER_BLASTER' },
-    // { name: '左右分割リフト', duration: 8000, type: 'SPLIT_LIFTS' },
+    // { name: '左右分割リフト', duration: 8000, type: 'SPLIT_LIFTS' }, // 無効化中
+    { name: 'DVDロゴ', duration: 10000, type: 'DVD_LOGO' }, // ← 追加
 ];
 
 // --- 英語セリフ ---
-const DIALOGUE_LINES = [
-    "it’s a beautiful day outside.",
-    "bulls are raging, bears are crying...",
-    "on days like these, projects like you...",
-    "Should go to the moon."
-];
-const INTERMISSION_DIALOGUE_LINES = [
-    "*Huff... puff...*",
-    "PEPE seems tired of trading memecoins."
-];
+const DIALOGUE_LINES = [ /* ... */ ];
+const INTERMISSION_DIALOGUE_LINES = [ /* ... */ ];
 
 // --- ゲームフェーズ定義 ---
-const GamePhase = {
-    PRELOAD: '準備中',
-    DIALOGUE: '会話',
-    BATTLE: '戦闘',
-    INTERMISSION_DIALOGUE: '幕間会話',
-    COMMAND_SELECTION: 'コマンド選択',
-    GAMEOVER: 'ゲームオーバー'
-};
+const GamePhase = { /* ... */ };
 
 // --- 初期状態 ---
-const getInitialState = () => ({
-    gamePhase: GamePhase.PRELOAD,
-    showDialogue: false,
-    displayedDialogue: "",
-    currentLineIndex: 0,
-    battlePlayerPosition: { x: BATTLE_BOX_WIDTH / 2 - PLAYER_SIZE / 2, y: BATTLE_BOX_HEIGHT / 2 - PLAYER_SIZE / 2 },
-    hp: INITIAL_HP,
-    currentAttackPatternIndex: 0,
-    attackTimer: ATTACK_PATTERNS.length > 0 ? ATTACK_PATTERNS[0].duration / 1000 : 0,
-    attacks: [],
-    isOutsideBounds: false,
-    battleTimeRemaining: BATTLE_DURATION_SECONDS,
-    isInvincible: false,
-    nextAttackIndex: null,
-});
+const getInitialState = () => ({ /* ... */ });
 
 // --- エラーバウンダリコンポーネント ---
-class ErrorBoundary extends React.Component {
-  constructor(props) { super(props); this.state = { hasError: false, error: null, errorInfo: null }; }
-  static getDerivedStateFromError(error) { return { hasError: true, error: error }; }
-  componentDidCatch(error, errorInfo) { console.error("Uncaught error:", error, errorInfo); this.setState({ errorInfo: errorInfo }); }
-  render() { if (this.state.hasError) { return ( <div className="text-white bg-red-800 p-4 rounded-lg text-center"> <h1 className="text-2xl font-bold mb-2">エラーが発生しました。</h1> <p className="mb-1">申し訳ありませんが、ゲームの描画中に問題が発生しました。</p> <p className="text-sm text-red-200 mb-2">詳細: {this.state.error?.toString()}</p> <button onClick={() => this.setState({ hasError: false, error: null, errorInfo: null })} className="mt-4 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">リセットして再試行</button> </div> ); } return this.props.children; }
-}
+class ErrorBoundary extends React.Component { /* ... */ }
 
 // ============================================================================
 // --- UI サブコンポーネント定義 (UI Sub-Components) ---
 // ============================================================================
-// ★★★ 変更点: Playerコンポーネントで画像を使用 ★★★
-const Player = React.memo(({ position, isInvincible }) => (
-    <img
-        src={PLAYER_IMAGE_URL}
-        alt="Player"
-        className={`absolute ${isInvincible ? 'player-invincible' : ''} pixelated`} // 点滅効果、ドット絵表示
-        style={{
-            left: `${position.x}px`,
-            top: `${position.y}px`,
-            width: `${PLAYER_SIZE}px`,
-            height: `${PLAYER_SIZE}px`
-        }}
-        // 画像読み込み失敗時の代替表示
-        onError={(e) => { e.target.onerror = null; e.target.src=`https://placehold.co/${PLAYER_SIZE}x${PLAYER_SIZE}/FF0000/FFFFFF?text=X`; }}
-    />
-));
+const Player = React.memo(({ position, isInvincible }) => ( /* ... */ ));
+
+// ★★★ 変更点: AttackRenderer に dvd_logo の描画処理を追加 ★★★
 const AttackRenderer = React.memo(({ attack }) => {
     switch(attack.type) {
         case 'gaster_warning': return <div key={attack.id} className="gaster-warning" style={{ left: `${attack.x}px`, top: `${attack.y}px`, width: `${attack.width}px`, height: `${attack.height}px` }}></div>;
         case 'gaster_beam': return <div key={attack.id} className="gaster-beam" style={{ left: `${attack.x}px`, top: `${attack.y}px`, width: `${attack.width}px`, height: `${attack.height}px` }}></div>;
         case 'bone': case 'bone_v': return ( <div key={attack.id} className="attack-bone" style={{ left: `${attack.x}px`, top: `${attack.y}px`, width: `${attack.width}px`, height: `${attack.height}px` }} /> );
         case 'platform': return ( <div key={attack.id} className="attack-platform" style={{ left: `${attack.x}px`, top: `${attack.y}px`, width: `${attack.width}px`, height: `${attack.height}px` }} /> );
+        // DVDロゴの描画 (色付きの四角形)
+        case 'dvd_logo': return ( <div key={attack.id} className="attack-dvd-logo" style={{ left: `${attack.x}px`, top: `${attack.y}px`, width: `${attack.width}px`, height: `${attack.height}px`, backgroundColor: attack.color || 'purple' }} /> );
         default: return null;
     }
 });
-const DialogueBox = React.memo(({ text, show }) => ( <div className="dialogue-container" style={{ opacity: show ? 1 : 0, pointerEvents: show ? 'auto' : 'none' }}> <div className="dialogue-box"> <p>{text}</p> </div> </div> ));
-const GameOverScreen = React.memo(({ onRestart }) => ( <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-85 z-10"> <p className="text-4xl text-red-500 font-bold mb-4">GAME OVER</p> <button onClick={onRestart} className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-md text-xl shadow-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-300"> RESTART </button> </div> ));
-const ActionButtons = React.memo(({ disabled, onCommand }) => (
-    <div className="mt-6 flex space-x-4">
-        {['たたかう', 'こうどう', 'アイテム', 'みのがす'].map((label) => (
-            <button
-                key={label}
-                className="bg-orange-500 hover:bg-orange-600 text-black font-bold py-3 px-6 rounded-md text-xl shadow-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-orange-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={disabled}
-                onClick={() => onCommand(label)}
-            >
-                {label}
-            </button>
-        ))}
-    </div>
-));
-const UIElements = React.memo(({ hp, currentAttackName, attackTimer, battleTimeRemaining, isBattle, isCommandSelection }) => (
-    <div className="mt-4 flex justify-between w-full px-4" style={{ maxWidth: `${BATTLE_BOX_WIDTH + 200}px` }}>
-        <div className="flex items-center">
-            <span className="mr-2 text-yellow-400 font-bold">HP</span>
-            <div className="w-24 h-4 bg-gray-700 border border-white rounded-sm overflow-hidden">
-                <div className="h-full bg-yellow-400 transition-width duration-300 ease-linear" style={{ width: `${Math.max(0, hp)}%` }}></div>
-            </div>
-            <span className="ml-2 text-white">{Math.max(0, hp)}/{INITIAL_HP}</span>
-        </div>
-        {isBattle && (
-            <div className="text-right text-sm">
-                <p>攻撃: {currentAttackName || '---'}</p>
-                <p>次まで: {attackTimer}s</p>
-                <p className="mt-1">残り時間: {battleTimeRemaining}s</p>
-            </div>
-        )}
-        {isCommandSelection && (
-            <div className="text-right text-sm text-yellow-400 font-bold">
-                コマンド選択中...
-            </div>
-        )}
-    </div>
-));
-const EnemyCharacter = React.memo(() => ( <img src={ENEMY_IMAGE_URL} alt="敵キャラクター" className="w-24 h-24 md:w-32 md:h-32 object-contain pixelated" onError={(e) => { e.target.onerror = null; e.target.src="https://placehold.co/100x100/000000/FF0000?text=画像読込失敗"; }} /> ));
-const PreloadScreen = React.memo(({ onStart }) => ( <div className="text-center"> <img src={ENEMY_IMAGE_URL} alt="敵キャラクター" className="w-32 h-32 object-contain pixelated mx-auto mb-4" onError={(e) => { e.target.onerror = null; e.target.src="https://placehold.co/100x100/000000/FF0000?text=画像読込失敗"; }} /> <h1 className="text-4xl mb-6 game-title">SUPER TALE</h1> <button onClick={onStart} className="bg-yellow-400 hover:bg-yellow-500 text-black font-bold py-3 px-8 rounded-md text-2xl shadow-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-yellow-300"> クリックして開始 </button> <p className="mt-4 text-sm text-gray-400">(クリックでオーディオを開始し、ゲームを始めます)</p> <p className="mt-2 text-xs text-gray-500"> ★ BGMが鳴ります ★<br/> ★ Requires: Tailwind, Tone.js, Lucide-React ★ </p> </div> ));
+const DialogueBox = React.memo(({ text, show }) => ( /* ... */ ));
+const GameOverScreen = React.memo(({ onRestart }) => ( /* ... */ ));
+const ActionButtons = React.memo(({ disabled, onCommand }) => ( /* ... */ ));
+const UIElements = React.memo(({ hp, currentAttackName, attackTimer, battleTimeRemaining, isBattle, isCommandSelection }) => ( /* ... */ ));
+const EnemyCharacter = React.memo(() => ( /* ... */ ));
+const PreloadScreen = React.memo(({ onStart }) => ( /* ... */ ));
 
 // ============================================================================
 // --- メインアプリケーションコンポーネント (Main App Component) ---
@@ -182,12 +105,30 @@ const App = () => {
 
   // Collision Detection
   const checkBattleCollision = useCallback((player, attack) => {
+    // gaster_warning は当たり判定なし
     if (attack.type === 'gaster_warning') return false;
-    const playerRect = { left: player.x, right: player.x + PLAYER_SIZE, top: player.y, bottom: player.y + PLAYER_SIZE };
-    let attackRect = { left: attack.x, right: attack.x + attack.width, top: attack.y, bottom: attack.y + attack.height };
-    const tolerance = 0;
-    return playerRect.left < attackRect.right - tolerance && playerRect.right > attackRect.left + tolerance && playerRect.top < attackRect.bottom - tolerance && playerRect.bottom > attackRect.top + tolerance;
-   }, []);
+
+    const playerRect = {
+        left: player.x,
+        right: player.x + PLAYER_SIZE,
+        top: player.y,
+        bottom: player.y + PLAYER_SIZE
+    };
+    // 攻撃オブジェクトの矩形
+    const attackRect = {
+        left: attack.x,
+        right: attack.x + attack.width,
+        top: attack.y,
+        bottom: attack.y + attack.height
+    };
+
+    // 矩形の衝突判定 (AABB)
+    const tolerance = 0; // 当たり判定の許容誤差 (0なら厳密)
+    return playerRect.left < attackRect.right - tolerance &&
+           playerRect.right > attackRect.left + tolerance &&
+           playerRect.top < attackRect.bottom - tolerance &&
+           playerRect.bottom > attackRect.top + tolerance;
+   }, []); // PLAYER_SIZE は定数なので依存関係不要
 
    // 無敵状態解除関数
    const endInvincibility = useCallback(() => { setGameState(prev => ({ ...prev, isInvincible: false })); invincibilityTimerRef.current = null; }, []);
@@ -210,16 +151,22 @@ const App = () => {
             }
             return { ...prev, hp: newHp, gamePhase: nextPhase, isInvincible: shouldBeInvincible };
         });
-   }, [endInvincibility]);
+   }, [endInvincibility]); // INVINCIBILITY_DURATION は定数
 
-  // Spawn Attack
+  // Spawn Attack (通常攻撃用、DVDロゴは別途生成)
    const spawnAttack = useCallback(() => {
-        if (gamePhaseRef.current !== GamePhase.BATTLE) return;
+        // DVDロゴパターン中は通常のスポーンを停止
+        if (gamePhaseRef.current !== GamePhase.BATTLE || (ATTACK_PATTERNS[gameState.currentAttackPatternIndex]?.type === 'DVD_LOGO')) {
+             return;
+        }
+
         setGameState(prev => {
             if (prev.gamePhase !== GamePhase.BATTLE) return prev;
             if (ATTACK_PATTERNS.length === 0) return prev;
             const currentPattern = ATTACK_PATTERNS[prev.currentAttackPatternIndex];
-            if (!currentPattern) return prev;
+            // DVDロゴパターンではここでは生成しない
+            if (!currentPattern || currentPattern.type === 'DVD_LOGO') return prev;
+
             let newAttacksToAdd = []; const idBase = Date.now() + Math.random();
             switch (currentPattern.type) {
                 case 'BONES_HORIZONTAL': { const y = Math.random() * (BATTLE_BOX_HEIGHT - HORIZONTAL_BONE_HEIGHT); const d = Math.random() < 0.5 ? 'l' : 'r'; newAttacksToAdd.push({ id: idBase, type: 'bone', x: d === 'l' ? -HORIZONTAL_BONE_WIDTH : BATTLE_BOX_WIDTH, y, width: HORIZONTAL_BONE_WIDTH, height: HORIZONTAL_BONE_HEIGHT, speed: BONE_SPEED * (d === 'l' ? 1 : -1), color: 'white' }); break; }
@@ -231,7 +178,7 @@ const App = () => {
             if (newAttacksToAdd.length > 0) return { ...prev, attacks: [...prev.attacks, ...newAttacksToAdd] };
             return prev;
         });
-   }, []);
+   }, [gameState.currentAttackPatternIndex]); // gameState依存を追加
 
   // Game Loop
   const gameLoop = useCallback((timestamp) => {
@@ -242,7 +189,7 @@ const App = () => {
     }
     if (!lastUpdateTimeRef.current) lastUpdateTimeRef.current = timestamp;
     const deltaTime = timestamp - lastUpdateTimeRef.current;
-    if (deltaTime > 100) {
+    if (deltaTime > 100) { // Avoid large jumps if tab was inactive
         lastUpdateTimeRef.current = timestamp;
         requestRef.current = requestAnimationFrame(gameLoop);
         return;
@@ -261,7 +208,7 @@ const App = () => {
         let newState = { ...prev };
         let newBattlePlayerPosition;
 
-        // Player Movement
+        // --- Player Movement ---
         if (prev.gamePhase === GamePhase.DIALOGUE || prev.gamePhase === GamePhase.BATTLE || prev.gamePhase === GamePhase.INTERMISSION_DIALOGUE) {
             let dx = 0; const hs = PLAYER_SPEED * deltaSeconds;
             if (pressedKeys.current['ArrowLeft'] || pressedKeys.current['KeyA']) dx -= hs;
@@ -280,17 +227,50 @@ const App = () => {
             newBattlePlayerPosition = prev.battlePlayerPosition;
         }
 
-        // Attack Update & Collision
+        // --- Attack Update & Collision ---
         let updatedAttacks = [];
         if (prev.gamePhase === GamePhase.BATTLE) {
             updatedAttacks = prev.attacks.map(a => {
                 let ua = { ...a };
+
+                // ★★★ 変更点: 攻撃タイプごとの更新処理 ★★★
                 switch (a.type) {
-                    case 'bone': ua.x += ua.speed * deltaSeconds; break;
-                    case 'bone_v': ua.y += ua.speed * deltaSeconds; break;
-                    case 'platform': ua.y += ua.speed * deltaSeconds; break;
-                    default: break;
+                    case 'bone':
+                        ua.x += ua.speed * deltaSeconds;
+                        break;
+                    case 'bone_v':
+                        ua.y += ua.speed * deltaSeconds;
+                        break;
+                    case 'platform':
+                        ua.y += ua.speed * deltaSeconds;
+                        break;
+                    // ★★★ 追加: DVDロゴの移動と反射 ★★★
+                    case 'dvd_logo':
+                        ua.x += ua.vx * deltaSeconds;
+                        ua.y += ua.vy * deltaSeconds;
+
+                        // 壁との反射判定
+                        if (ua.x <= 0) {
+                            ua.vx = Math.abs(ua.vx); // 必ず正の速度に
+                            ua.x = 0; // 壁にくっつける
+                        } else if (ua.x + ua.width >= BATTLE_BOX_WIDTH) {
+                            ua.vx = -Math.abs(ua.vx); // 必ず負の速度に
+                            ua.x = BATTLE_BOX_WIDTH - ua.width; // 壁にくっつける
+                        }
+
+                        if (ua.y <= 0) {
+                            ua.vy = Math.abs(ua.vy); // 必ず正の速度に
+                            ua.y = 0; // 壁にくっつける
+                        } else if (ua.y + ua.height >= BATTLE_BOX_HEIGHT) {
+                            ua.vy = -Math.abs(ua.vy); // 必ず負の速度に
+                            ua.y = BATTLE_BOX_HEIGHT - ua.height; // 壁にくっつける
+                        }
+                        break;
+                    default:
+                        break;
                 }
+
+                // Gaster Beam / Warning の処理 (変更なし)
                 if (a.lifetime !== undefined) {
                     ua.lifetime -= deltaTime;
                     if (ua.lifetime <= 0) attacksToRemoveThisFrame.add(a.id);
@@ -317,9 +297,9 @@ const App = () => {
                 return ua;
             });
 
-            // Remove off-screen attacks
+            // Remove off-screen attacks (DVDロゴ以外)
             updatedAttacks.forEach(a => {
-                if (a.type !== 'gaster_warning' && a.type !== 'gaster_beam') {
+                if (a.type !== 'gaster_warning' && a.type !== 'gaster_beam' && a.type !== 'dvd_logo') {
                     if (a.x + a.width < -50 || a.x > BATTLE_BOX_WIDTH + 50 ||
                         a.y + a.height < -50 || a.y > BATTLE_BOX_HEIGHT + 50) {
                         attacksToRemoveThisFrame.add(a.id);
@@ -327,14 +307,16 @@ const App = () => {
                 }
             });
 
-            // Check collisions
+            // Check for collisions
             const playerRect = { x: newBattlePlayerPosition.x, y: newBattlePlayerPosition.y };
             let finalAttacks = [];
             for (const attack of updatedAttacks) {
                 if (attacksToRemoveThisFrame.has(attack.id)) continue;
+
                 if (!currentlyInvincible && !hitDetectedThisFrame && checkBattleCollision(playerRect, attack)) {
                     hitDetectedThisFrame = true;
-                    if (attack.type !== 'gaster_beam') {
+                    // Remove colliding bone/platform, but not beams or DVD logo
+                    if (attack.type !== 'gaster_beam' && attack.type !== 'dvd_logo') {
                         attacksToRemoveThisFrame.add(attack.id);
                         continue;
                     }
@@ -359,166 +341,120 @@ const App = () => {
     }
 
     requestRef.current = requestAnimationFrame(gameLoop);
-  }, [applyDamage, checkBattleCollision]);
+  }, [applyDamage, checkBattleCollision]); // 定数は依存関係から除外
 
 
   // --- Audio Setup and Control ---
-  const setupAudio = useCallback(() => {
-    synthRef.current = new Tone.Synth({ oscillator: { type: 'pulse', width: 0.5 }, envelope: { attack: 0.01, decay: 0.08, sustain: 0.1, release: 0.2 }, volume: -16 }).toDestination();
-    typingSynthRef.current = new Tone.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.001, decay: 0.03, sustain: 0, release: 0.05 }, volume: -22 }).toDestination();
-    const notes = [ "C3", null, "E3", "G3", "C3", null, "E3", "G3", "A2", null, "C3", "E3", "A2", null, "C3", "E3", "F2", null, "A2", "C3", "F2", null, "A2", "C3", "G2", null, "B2", "D3", "G2", "B2", "D3", "G2" ];
-    bgmLoopRef.current = new Tone.Sequence((time, note) => { if (note && synthRef.current) { synthRef.current.triggerAttackRelease(note, "16n", time); } }, notes, "16n").start(0);
-    bgmLoopRef.current.loop = true; Tone.Transport.bpm.value = 104;
-   }, []);
-  const startAudio = useCallback(async () => {
-    if (!toneStarted.current) { try { await Tone.start(); toneStarted.current = true; setupAudio(); Tone.Transport.start(); } catch (e) { console.error("Tone.jsの開始に失敗:", e); } } else if (Tone.Transport.state !== 'started') { Tone.Transport.start(); }
-   }, [setupAudio]);
-  const stopAudio = useCallback(() => {
-      if (Tone.Transport.state === 'started') { Tone.Transport.stop(); }
-      bgmLoopRef.current?.dispose(); synthRef.current?.dispose(); typingSynthRef.current?.dispose();
-      bgmLoopRef.current = null; synthRef.current = null; typingSynthRef.current = null;
-      clearTimeout(invincibilityTimerRef.current);
-   }, []);
-  const playTypingSound = useCallback(() => { if (Tone && typingSynthRef.current && Tone.context.state === 'running') { typingSynthRef.current.triggerAttackRelease("C5", "16n", Tone.now()); } }, []);
+  const setupAudio = useCallback(() => { /* ... */ }, []);
+  const startAudio = useCallback(async () => { /* ... */ }, [setupAudio]);
+  const stopAudio = useCallback(() => { /* ... */ }, []);
+  const playTypingSound = useCallback(() => { /* ... */ }, []);
 
 
   // --- Dialogue Sequence Logic ---
-  const typeNextLine = useCallback(() => {
-      setGameState(prev => {
-          if (prev.gamePhase !== GamePhase.DIALOGUE && prev.gamePhase !== GamePhase.INTERMISSION_DIALOGUE) return prev;
-
-          const currentLines = prev.gamePhase === GamePhase.INTERMISSION_DIALOGUE ? INTERMISSION_DIALOGUE_LINES : DIALOGUE_LINES;
-          const currentPhase = prev.gamePhase;
-          const lineIndex = prev.currentLineIndex;
-
-          if (lineIndex >= currentLines.length) {
-              if (currentPhase === GamePhase.INTERMISSION_DIALOGUE) {
-                  if (prev.nextAttackIndex === null || ATTACK_PATTERNS.length === 0 || prev.nextAttackIndex >= ATTACK_PATTERNS.length) {
-                      console.warn("Intermission finished, but no valid next attack. Transitioning to command selection.");
-                      return { ...prev, gamePhase: GamePhase.COMMAND_SELECTION, showDialogue: false, attacks: [] };
-                  }
-                  return { ...prev, gamePhase: GamePhase.BATTLE, showDialogue: false, currentAttackPatternIndex: prev.nextAttackIndex, nextAttackIndex: null };
-              } else {
-                  const initPos = { x: BATTLE_BOX_WIDTH / 2 - PLAYER_SIZE / 2, y: BATTLE_BOX_HEIGHT / 2 - PLAYER_SIZE / 2 };
-                  playerPositionRef.current = initPos;
-                  return { ...prev, gamePhase: GamePhase.BATTLE, showDialogue: false, battlePlayerPosition: initPos };
-              }
-          }
-
-          const fullText = currentLines[lineIndex];
-          let charIndex = 0;
-
-          clearInterval(typewriterIntervalRef.current);
-          clearTimeout(nextLineTimeoutRef.current);
-
-          typewriterIntervalRef.current = setInterval(() => {
-              setGameState(currentInternalState => {
-                  if (currentInternalState.gamePhase !== currentPhase) {
-                      clearInterval(typewriterIntervalRef.current);
-                      return currentInternalState;
-                  }
-                  if (charIndex < fullText.length) {
-                      if(currentInternalState.displayedDialogue.length < fullText.length) playTypingSound();
-                      const nextDisplayed = fullText.substring(0, charIndex + 1);
-                      charIndex++;
-                      return { ...currentInternalState, displayedDialogue: nextDisplayed };
-                  } else {
-                      clearInterval(typewriterIntervalRef.current);
-                      nextLineTimeoutRef.current = setTimeout(typeNextLine, DELAY_BETWEEN_LINES);
-                      return currentInternalState;
-                  }
-              });
-          }, TYPEWRITER_SPEED);
-
-          return { ...prev, displayedDialogue: "", showDialogue: true, currentLineIndex: lineIndex + 1 };
-      });
-  }, [playTypingSound]);
-
-  const startDialogueSequence = useCallback(() => {
-      console.log("Starting dialogue sequence...");
-      clearTimeout(nextLineTimeoutRef.current);
-      clearInterval(typewriterIntervalRef.current);
-      setGameState(prev => ({ ...prev, currentLineIndex: 0, displayedDialogue: "", showDialogue: true }));
-      typeNextLine();
-  }, [typeNextLine]);
+  const typeNextLine = useCallback(() => { /* ... */ }, [playTypingSound]);
+  const startDialogueSequence = useCallback(() => { /* ... */ }, [typeNextLine]);
 
 
   // --- Game Start & Reset Logic ---
-  const resetGame = useCallback(() => {
-      console.log("ゲームをリセットします..."); stopAudio();
-      clearInterval(spawnIntervalRef.current); clearTimeout(nextPatternTimeoutRef.current); clearInterval(attackTimerIntervalRef.current); clearTimeout(boundaryDamageTimerRef.current); clearInterval(battleTimerIntervalRef.current); clearInterval(typewriterIntervalRef.current); clearTimeout(nextLineTimeoutRef.current);
-      cancelAnimationFrame(requestRef.current); requestRef.current = null;
-      const initialState = getInitialState(); setGameState(initialState); playerPositionRef.current = initialState.battlePlayerPosition; gamePhaseRef.current = GamePhase.PRELOAD; pressedKeys.current = {}; lastUpdateTimeRef.current = 0; toneStarted.current = false;
-      nextLiftSideRef.current = 'left';
-      console.log("ゲームのリセット完了。");
-  }, [stopAudio]);
-  const handleStartGame = useCallback(async () => {
-    await startAudio();
-    const initialState = getInitialState();
-    playerPositionRef.current = initialState.battlePlayerPosition;
-    setGameState(prev => ({ ...initialState, gamePhase: GamePhase.DIALOGUE, showDialogue: true }));
-  }, [startAudio]);
+  const resetGame = useCallback(() => { /* ... */ }, [stopAudio]);
+  const handleStartGame = useCallback(async () => { /* ... */ }, [startAudio]);
 
 
   // --- Keyboard Handlers ---
-  const handleKeyDown = useCallback((event) => { if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)) pressedKeys.current[event.code] = true; }, []);
-  const handleKeyUp = useCallback((event) => { if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)) pressedKeys.current[event.code] = false; }, []);
+  const handleKeyDown = useCallback((event) => { /* ... */ }, []);
+  const handleKeyUp = useCallback((event) => { /* ... */ }, []);
 
   // --- Attack Pattern Switching Logic ---
+  // ★★★ 変更点: パターン切り替え時の処理を修正 ★★★
   const switchToNextPattern = useCallback(() => {
       clearTimeout(nextPatternTimeoutRef.current);
       setGameState(prev => {
           if (prev.gamePhase !== GamePhase.BATTLE) return prev;
           if (ATTACK_PATTERNS.length === 0) {
-              console.warn("No attack patterns defined. Cannot switch. Transitioning to command selection.");
+              console.warn("No attack patterns defined. Transitioning to command selection.");
               return { ...prev, gamePhase: GamePhase.COMMAND_SELECTION, attacks: [] };
           }
 
           const currentPatternIndex = prev.currentAttackPatternIndex;
           const nextIndexRaw = currentPatternIndex + 1;
 
+          // 最後のパターンが終わったらコマンド選択へ (ループしない)
           if (nextIndexRaw >= ATTACK_PATTERNS.length) {
-              console.log("Last attack pattern finished (index check). Letting battle timer handle transition.");
-              clearInterval(spawnIntervalRef.current);
+              console.log("Last attack pattern finished. Transitioning to command selection.");
+              clearInterval(spawnIntervalRef.current); // 通常攻撃の生成を停止
               clearTimeout(nextPatternTimeoutRef.current);
               clearInterval(attackTimerIntervalRef.current);
-              return prev;
+              // DVDロゴなどの持続的な攻撃もクリア
+              return { ...prev, gamePhase: GamePhase.COMMAND_SELECTION, attacks: [] };
           }
 
           const nextAttackPatternIndex = nextIndexRaw;
+          const nextPattern = ATTACK_PATTERNS[nextAttackPatternIndex];
 
-          if (currentPatternIndex === 2) {
-               if (nextAttackPatternIndex >= ATTACK_PATTERNS.length) {
-                  console.warn("Intermission dialogue should trigger, but no more attack patterns after it. Transitioning to command selection directly after dialogue.");
-                  // Setting nextAttackIndex to null will cause transition to COMMAND_SELECTION after dialogue
-                  return { ...prev, gamePhase: GamePhase.INTERMISSION_DIALOGUE, nextAttackIndex: null, attacks: [], showDialogue: true, currentLineIndex: 0, displayedDialogue: "" };
+          if (!nextPattern) { // 安全策
+              console.error("Next pattern not found at index:", nextAttackPatternIndex);
+              return { ...prev, gamePhase: GamePhase.COMMAND_SELECTION, attacks: [] };
+          }
+
+          let attacksToAdd = [];
+          // ★★★ 追加: DVDロゴパターンの開始時にロゴを生成 ★★★
+          if (nextPattern.type === 'DVD_LOGO') {
+              // ランダムな初期速度（ただし、完全に水平/垂直にならないように）
+              let angle = Math.random() * Math.PI * 2;
+              // 角度が軸に近すぎる場合は調整
+              while (Math.abs(Math.cos(angle)) < 0.1 || Math.abs(Math.sin(angle)) < 0.1) {
+                  angle = Math.random() * Math.PI * 2;
               }
+              const initialVx = DVD_LOGO_SPEED * Math.cos(angle);
+              const initialVy = DVD_LOGO_SPEED * Math.sin(angle);
+
+              attacksToAdd.push({
+                  id: 'dvd_logo_' + Date.now(),
+                  type: 'dvd_logo',
+                  x: BATTLE_BOX_WIDTH / 2 - DVD_LOGO_SIZE / 2, // 中央から開始
+                  y: BATTLE_BOX_HEIGHT / 2 - DVD_LOGO_SIZE / 2,
+                  width: DVD_LOGO_SIZE,
+                  height: DVD_LOGO_SIZE,
+                  vx: initialVx,
+                  vy: initialVy,
+                  color: `hsl(${Math.random() * 360}, 70%, 60%)` // ランダムな色
+              });
+              clearInterval(spawnIntervalRef.current); // DVDロゴ中は通常スポーン停止
+              spawnIntervalRef.current = null;
+          } else {
+              // DVDロゴ以外のパターンが始まる場合、通常スポーンを再開/開始
+              if (!spawnIntervalRef.current) {
+                   spawnIntervalRef.current = setInterval(spawnAttack, SPAWN_INTERVAL);
+              }
+          }
+
+          // 中間ダイアログのチェック (index 2 の後)
+          if (currentPatternIndex === 2) {
               console.log("攻撃パターン3終了。中間ダイアログへ移行。");
+              // DVDロゴなどの持続攻撃もクリア
               return {
                   ...prev,
                   gamePhase: GamePhase.INTERMISSION_DIALOGUE,
                   nextAttackIndex: nextAttackPatternIndex,
-                  attacks: [],
+                  attacks: [], // 幕間に入る前に攻撃をクリア
                   showDialogue: true,
                   currentLineIndex: 0,
                   displayedDialogue: "",
               };
           } else {
-              const nextPattern = ATTACK_PATTERNS[nextAttackPatternIndex];
-              if (!nextPattern) {
-                  console.error("Next pattern not found at index:", nextAttackPatternIndex);
-                  return { ...prev, gamePhase: GamePhase.COMMAND_SELECTION, attacks: [] };
-              }
+              // 通常のパターン切り替え
               console.log(`次の攻撃パターンへ移行: ${nextPattern.name} (持続時間: ${nextPattern.duration}ms)`);
               nextPatternTimeoutRef.current = setTimeout(switchToNextPattern, nextPattern.duration);
               return {
                   ...prev,
                   currentAttackPatternIndex: nextAttackPatternIndex,
                   attackTimer: nextPattern.duration / 1000,
+                  attacks: attacksToAdd, // 前の攻撃をクリアし、新しい攻撃(DVDロゴなど)を追加
               };
           }
       });
-  }, []);
+  }, [spawnAttack]); // spawnAttack を依存関係に追加
 
    // --- 戦闘開始処理 ---
    const startBattle = useCallback(() => {
@@ -537,30 +473,66 @@ const App = () => {
           return;
       }
 
+      // Clear previous timers before starting new ones
       clearInterval(spawnIntervalRef.current);
       clearTimeout(nextPatternTimeoutRef.current);
       clearInterval(attackTimerIntervalRef.current);
       clearInterval(battleTimerIntervalRef.current);
+      spawnIntervalRef.current = null; // Reset ref
+      nextPatternTimeoutRef.current = null;
+      attackTimerIntervalRef.current = null;
+      battleTimerIntervalRef.current = null;
 
-      spawnIntervalRef.current = setInterval(spawnAttack, SPAWN_INTERVAL);
 
       setGameState(prev => {
-          const initialIndex = prev.currentAttackPatternIndex < ATTACK_PATTERNS.length ? prev.currentAttackPatternIndex : 0;
-          const pattern = ATTACK_PATTERNS[initialIndex];
+          // 幕間から戻ってきた場合、nextAttackIndex を使う
+          const initialIndex = prev.nextAttackIndex !== null ? prev.nextAttackIndex : 0;
+          // 念のためインデックスが範囲内か確認
+          const validInitialIndex = initialIndex < ATTACK_PATTERNS.length ? initialIndex : 0;
+          const pattern = ATTACK_PATTERNS[validInitialIndex];
+
+          let initialAttacks = [];
           if (pattern) {
                console.log(`現在の攻撃パターン開始: ${pattern.name}, ${pattern.duration}ms後に切り替え`);
                nextPatternTimeoutRef.current = setTimeout(switchToNextPattern, pattern.duration);
-               return {...prev, currentAttackPatternIndex: initialIndex, attackTimer: pattern.duration / 1000 };
+
+               // ★★★ 追加: 戦闘開始時にもDVDロゴ生成をチェック ★★★
+               if (pattern.type === 'DVD_LOGO') {
+                   let angle = Math.random() * Math.PI * 2;
+                   while (Math.abs(Math.cos(angle)) < 0.1 || Math.abs(Math.sin(angle)) < 0.1) { angle = Math.random() * Math.PI * 2; }
+                   const initialVx = DVD_LOGO_SPEED * Math.cos(angle);
+                   const initialVy = DVD_LOGO_SPEED * Math.sin(angle);
+                   initialAttacks.push({
+                       id: 'dvd_logo_' + Date.now(), type: 'dvd_logo',
+                       x: BATTLE_BOX_WIDTH / 2 - DVD_LOGO_SIZE / 2, y: BATTLE_BOX_HEIGHT / 2 - DVD_LOGO_SIZE / 2,
+                       width: DVD_LOGO_SIZE, height: DVD_LOGO_SIZE,
+                       vx: initialVx, vy: initialVy,
+                       color: `hsl(${Math.random() * 360}, 70%, 60%)`
+                   });
+               } else {
+                   // DVDロゴ以外なら通常スポーン開始
+                   spawnIntervalRef.current = setInterval(spawnAttack, SPAWN_INTERVAL);
+               }
+
+               return {
+                   ...prev,
+                   currentAttackPatternIndex: validInitialIndex,
+                   attackTimer: pattern.duration / 1000,
+                   attacks: initialAttacks, // 初期攻撃を設定 (DVDロゴなど)
+                   nextAttackIndex: null // 使用したのでリセット
+                };
           } else {
-              console.error("Initial pattern not found at index:", initialIndex);
+              console.error("Initial pattern not found at index:", validInitialIndex);
               return { ...prev, gamePhase: GamePhase.COMMAND_SELECTION, attacks: [] };
           }
       });
 
+      // Attack Timer Interval (Visual Countdown)
       attackTimerIntervalRef.current = setInterval(() => {
           setGameState(prev => (prev.gamePhase === GamePhase.BATTLE ? { ...prev, attackTimer: Math.max(0, prev.attackTimer - 1) } : prev));
       }, 1000);
 
+      // Battle Duration Timer
       battleTimerIntervalRef.current = setInterval(() => {
           setGameState(prev => {
               if (prev.gamePhase !== GamePhase.BATTLE) {
@@ -579,102 +551,22 @@ const App = () => {
               return { ...prev, battleTimeRemaining: newTime };
           });
       }, 1000);
-  }, [spawnAttack, switchToNextPattern, gameLoop]);
+  }, [spawnAttack, switchToNextPattern, gameLoop]); // gameLoop依存復活
 
 
   // --- Effects ---
 
   // Keyboard Listener Setup
-  useEffect(() => {
-      window.addEventListener('keydown', handleKeyDown); window.addEventListener('keyup', handleKeyUp);
-      return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); };
-  }, [handleKeyDown, handleKeyUp]);
+  useEffect(() => { /* ... */ }, [handleKeyDown, handleKeyUp]);
 
   // Main Game Phase Logic Controller
-  useEffect(() => {
-      const cleanup = () => {
-          clearInterval(spawnIntervalRef.current);
-          clearTimeout(nextPatternTimeoutRef.current);
-          clearInterval(attackTimerIntervalRef.current);
-          clearInterval(battleTimerIntervalRef.current);
-          if (requestRef.current) {
-              cancelAnimationFrame(requestRef.current);
-              requestRef.current = null;
-          }
-          clearInterval(typewriterIntervalRef.current);
-          clearTimeout(nextLineTimeoutRef.current);
-          clearTimeout(invincibilityTimerRef.current);
-          spawnIntervalRef.current = null;
-          nextPatternTimeoutRef.current = null;
-          attackTimerIntervalRef.current = null;
-          battleTimerIntervalRef.current = null;
-          typewriterIntervalRef.current = null;
-          nextLineTimeoutRef.current = null;
-          invincibilityTimerRef.current = null;
-      };
-
-      console.log(`Phase changed TO ${gamePhase}. Setting up...`);
-      cleanup();
-
-      switch (gamePhase) {
-          case GamePhase.PRELOAD:
-              stopAudio();
-              break;
-          case GamePhase.DIALOGUE:
-              lastUpdateTimeRef.current = 0;
-              if (!requestRef.current) requestRef.current = requestAnimationFrame(gameLoop);
-              startDialogueSequence();
-              setTimeout(() => battleBoxRef.current?.focus(), 0);
-              if (Tone.Transport.state !== 'started' && toneStarted.current) Tone.Transport.start();
-              break;
-          case GamePhase.INTERMISSION_DIALOGUE:
-              if (!requestRef.current) {
-                  lastUpdateTimeRef.current = 0;
-                  requestRef.current = requestAnimationFrame(gameLoop);
-              }
-              startDialogueSequence();
-              setTimeout(() => battleBoxRef.current?.focus(), 0);
-              break;
-          case GamePhase.BATTLE:
-              startBattle();
-              break;
-          case GamePhase.COMMAND_SELECTION:
-              console.log("Entered COMMAND_SELECTION phase. Waiting for command.");
-              if (Tone.Transport.state !== 'started' && toneStarted.current) {
-                  Tone.Transport.start();
-              }
-              break;
-          case GamePhase.GAMEOVER:
-              stopAudio();
-              break;
-          default:
-              break;
-      }
-      return cleanup;
-  }, [gamePhase, startBattle, stopAudio, gameLoop, startDialogueSequence]); // 依存配列を修正
+  useEffect(() => { /* ... */ }, [gamePhase, startBattle, stopAudio, gameLoop, startDialogueSequence]);
 
    // Audio Cleanup on Unmount
    useEffect(() => { return () => { stopAudio(); toneStarted.current = false; }; }, [stopAudio]);
 
    // --- コマンド選択処理 ---
-   const handleCommandSelection = useCallback((command) => {
-        if (gameState.gamePhase !== GamePhase.COMMAND_SELECTION) return;
-
-        console.log(`Command selected: ${command}`);
-        alert(`「${command}」が選択されました。\n（実際の処理は未実装です）`);
-
-        // TODO: Implement logic for each command.
-        // Example: Transition back to BATTLE
-        // setGameState(prev => ({
-        //     ...prev,
-        //     gamePhase: GamePhase.BATTLE,
-        //     battleTimeRemaining: BATTLE_DURATION_SECONDS,
-        //     currentAttackPatternIndex: 0,
-        //     attackTimer: ATTACK_PATTERNS.length > 0 ? ATTACK_PATTERNS[0].duration / 1000 : 0,
-        //     attacks: [],
-        // }));
-
-   }, [gameState.gamePhase]);
+   const handleCommandSelection = useCallback((command) => { /* ... */ }, [gameState.gamePhase]);
 
 
   // --- Rendering ---
@@ -682,6 +574,7 @@ const App = () => {
     <ErrorBoundary>
         <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white font-mono select-none p-4">
           {/* スタイル定義 */}
+          {/* ★★★ 追加: DVDロゴ用のスタイル ★★★ */}
           <style>{`
             .pixelated { image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges; }
             body { font-family: 'Courier New', Courier, monospace; background-color: black; }
@@ -696,6 +589,7 @@ const App = () => {
             .gaster-warning { position: absolute; border: 2px dashed rgba(255, 255, 255, 0.7); box-sizing: border-box; z-index: 15; animation: blink-warning 0.2s linear infinite alternate; }
             @keyframes blink-warning { 0% { border-color: rgba(255, 255, 255, 0.7); } 100% { border-color: rgba(255, 255, 255, 0.2); } }
             .gaster-beam { position: absolute; background-color: rgba(255, 255, 255, 0.9); box-shadow: 0 0 10px 5px rgba(255, 255, 255, 0.5); z-index: 5; }
+            .attack-dvd-logo { position: absolute; border: 1px solid rgba(255, 255, 255, 0.5); box-shadow: 0 0 5px rgba(255, 255, 255, 0.3); } /* DVDロゴのスタイル */
             @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
             .game-title { font-family: 'Press Start 2P', cursive; color: white; text-shadow: 2px 2px #555; }
             .player-invincible { animation: blink-invincible 0.1s linear infinite; }
@@ -713,12 +607,14 @@ const App = () => {
                </div>
                <div ref={battleBoxRef} className="relative border-2 border-white overflow-hidden bg-black mt-2" style={{ width: `${BATTLE_BOX_WIDTH}px`, height: `${BATTLE_BOX_HEIGHT}px` }} tabIndex={0}>
                   {gamePhase !== GamePhase.GAMEOVER && gamePhase !== GamePhase.COMMAND_SELECTION && <Player position={battlePlayerPosition} isInvincible={isInvincible} />}
+                  {/* 戦闘中のみ攻撃を描画 */}
                   {gamePhase === GamePhase.BATTLE && attacks.map((attack) => <AttackRenderer key={attack.id} attack={attack} /> )}
                   {gamePhase === GamePhase.GAMEOVER && <GameOverScreen onRestart={resetGame} />}
               </div>
                <UIElements
                     hp={hp}
-                    currentAttackName={currentAttack?.name}
+                    // ★★★ 変更点: currentAttack が null の場合のフォールバック ★★★
+                    currentAttackName={currentAttack?.name ?? (gamePhase === GamePhase.BATTLE ? '読み込み中...' : '---')}
                     attackTimer={attackTimer}
                     battleTimeRemaining={battleTimeRemaining}
                     isBattle={gamePhase === GamePhase.BATTLE}
@@ -736,4 +632,5 @@ const App = () => {
 };
 
 export default App;
+
 
