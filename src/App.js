@@ -79,7 +79,6 @@ const getInitialState = () => ({
 });
 
 // --- エラーバウンダリコンポーネント ---
-// このコンポーネントはデフォルトエクスポートではありません
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null, errorInfo: null }; }
   static getDerivedStateFromError(error) { return { hasError: true, error: error }; }
@@ -89,7 +88,6 @@ class ErrorBoundary extends React.Component {
 
 // ============================================================================
 // --- UI サブコンポーネント定義 (UI Sub-Components) ---
-// これらもデフォルトエクスポートではありません
 // ============================================================================
 const Player = React.memo(({ position, isInvincible }) => ( <Heart className={`absolute text-red-500 fill-current ${isInvincible ? 'player-invincible' : ''}`} style={{ left: `${position.x}px`, top: `${position.y}px`, width: `${PLAYER_SIZE}px`, height: `${PLAYER_SIZE}px` }} /> ));
 const AttackRenderer = React.memo(({ attack }) => {
@@ -145,7 +143,6 @@ const PreloadScreen = React.memo(({ onStart }) => ( <div className="text-center"
 
 // ============================================================================
 // --- メインアプリケーションコンポーネント (Main App Component) ---
-// この App コンポーネントがデフォルトエクスポートされます
 // ============================================================================
 const App = () => {
   // --- State & Refs ---
@@ -371,51 +368,80 @@ const App = () => {
   // --- Dialogue Sequence Logic ---
   const typeNextLine = useCallback(() => {
       setGameState(prev => {
+          // Ensure we are in a dialogue phase
           if (prev.gamePhase !== GamePhase.DIALOGUE && prev.gamePhase !== GamePhase.INTERMISSION_DIALOGUE) return prev;
+
           const currentLines = prev.gamePhase === GamePhase.INTERMISSION_DIALOGUE ? INTERMISSION_DIALOGUE_LINES : DIALOGUE_LINES;
-          const currentPhase = prev.gamePhase;
+          const currentPhase = prev.gamePhase; // Capture phase at the start
           const lineIndex = prev.currentLineIndex;
+
+          // Check if dialogue sequence is finished
           if (lineIndex >= currentLines.length) {
               if (currentPhase === GamePhase.INTERMISSION_DIALOGUE) {
+                  // Check if there's a valid next attack pattern
                   if (prev.nextAttackIndex === null || ATTACK_PATTERNS.length === 0 || prev.nextAttackIndex >= ATTACK_PATTERNS.length) {
-                      console.warn("No valid next attack index or no attack patterns left after intermission. Transitioning to command selection.");
+                      console.warn("Intermission finished, but no valid next attack. Transitioning to command selection.");
+                      // Transition to command selection phase
                       return { ...prev, gamePhase: GamePhase.COMMAND_SELECTION, showDialogue: false, attacks: [] };
                   }
+                  // Transition back to BATTLE phase with the stored next attack index
                   return { ...prev, gamePhase: GamePhase.BATTLE, showDialogue: false, currentAttackPatternIndex: prev.nextAttackIndex, nextAttackIndex: null };
-              } else {
+              } else { // Initial dialogue finished
+                  // Transition to BATTLE phase
                   const initPos = { x: BATTLE_BOX_WIDTH / 2 - PLAYER_SIZE / 2, y: BATTLE_BOX_HEIGHT / 2 - PLAYER_SIZE / 2 };
-                  playerPositionRef.current = initPos;
+                  playerPositionRef.current = initPos; // Sync ref immediately
                   return { ...prev, gamePhase: GamePhase.BATTLE, showDialogue: false, battlePlayerPosition: initPos };
               }
           }
+
+          // Get the full text for the current line
           const fullText = currentLines[lineIndex];
           let charIndex = 0;
+
+          // Clear previous intervals/timeouts for typing
           clearInterval(typewriterIntervalRef.current);
           clearTimeout(nextLineTimeoutRef.current);
+
+          // Start typewriter effect for the current line
           typewriterIntervalRef.current = setInterval(() => {
               setGameState(currentInternalState => {
+                  // Stop typing if the game phase changed mid-line
                   if (currentInternalState.gamePhase !== currentPhase) {
                       clearInterval(typewriterIntervalRef.current);
                       return currentInternalState;
                   }
+
+                  // Type next character
                   if (charIndex < fullText.length) {
+                      // Play sound only if adding a character
                       if(currentInternalState.displayedDialogue.length < fullText.length) playTypingSound();
                       const nextDisplayed = fullText.substring(0, charIndex + 1);
                       charIndex++;
                       return { ...currentInternalState, displayedDialogue: nextDisplayed };
                   } else {
+                      // Line finished typing, clear interval and set timeout for next line
                       clearInterval(typewriterIntervalRef.current);
                       nextLineTimeoutRef.current = setTimeout(typeNextLine, DELAY_BETWEEN_LINES);
-                      return currentInternalState;
+                      return currentInternalState; // Return state without changing displayed text yet
                   }
               });
           }, TYPEWRITER_SPEED);
+
+          // Update state to show dialogue box and prepare for the new line (clear previous text)
+          // Increment line index for the *next* call to typeNextLine
           return { ...prev, displayedDialogue: "", showDialogue: true, currentLineIndex: lineIndex + 1 };
       });
-  }, [playTypingSound]);
+  }, [playTypingSound]); // playTypingSound is stable due to useCallback
+
   const startDialogueSequence = useCallback(() => {
-      clearTimeout(nextLineTimeoutRef.current); clearInterval(typewriterIntervalRef.current);
+      console.log("Starting dialogue sequence..."); // Debug log
+      clearTimeout(nextLineTimeoutRef.current);
+      clearInterval(typewriterIntervalRef.current);
+      // Reset dialogue state and trigger the first line typing
       setGameState(prev => ({ ...prev, currentLineIndex: 0, displayedDialogue: "", showDialogue: true }));
+      // Use a slight delay to ensure state update before calling typeNextLine,
+      // although direct call might be fine with how typeNextLine reads state.
+      // setTimeout(typeNextLine, 0); // Or call directly:
       typeNextLine();
   }, [typeNextLine]);
 
@@ -454,16 +480,13 @@ const App = () => {
           const currentPatternIndex = prev.currentAttackPatternIndex;
           const nextIndexRaw = currentPatternIndex + 1;
 
-          // Check if the last pattern just finished
+          // Check if the last pattern just finished based on index
           if (nextIndexRaw >= ATTACK_PATTERNS.length) {
-              console.log("Last attack pattern finished based on duration. Transitioning to command selection.");
-              // Stop specific battle timers, let battle timer run out or go directly to command phase
-              clearInterval(spawnIntervalRef.current); // Stop spawning for this pattern
-              clearTimeout(nextPatternTimeoutRef.current); // Stop switching timeout
-              clearInterval(attackTimerIntervalRef.current); // Stop visual countdown for pattern
-              // Let the main battle timer continue until it hits 0, which will trigger COMMAND_SELECTION
-              // Or transition immediately: return { ...prev, gamePhase: GamePhase.COMMAND_SELECTION, attacks: [] };
-              // Keeping the current behavior: let battle timer handle the transition
+              console.log("Last attack pattern finished (index check). Letting battle timer handle transition.");
+              // Stop spawning/switching for this pattern, let battle timer run out
+              clearInterval(spawnIntervalRef.current);
+              clearTimeout(nextPatternTimeoutRef.current);
+              clearInterval(attackTimerIntervalRef.current);
               return prev; // Let battle timer trigger the phase change
           }
 
@@ -473,6 +496,7 @@ const App = () => {
           if (currentPatternIndex === 2) {
                // Ensure there IS a next pattern after intermission
               if (nextAttackPatternIndex >= ATTACK_PATTERNS.length) {
+                  // This case should ideally not be reached if the outer check works, but safety first.
                   console.warn("Intermission dialogue finished, but no more attack patterns. Transitioning to command selection.");
                   return { ...prev, gamePhase: GamePhase.COMMAND_SELECTION, showDialogue: false, attacks: [] };
               }
@@ -480,16 +504,16 @@ const App = () => {
               return {
                   ...prev,
                   gamePhase: GamePhase.INTERMISSION_DIALOGUE,
-                  nextAttackIndex: nextAttackPatternIndex,
-                  attacks: [],
-                  showDialogue: true,
-                  currentLineIndex: 0,
-                  displayedDialogue: "",
+                  nextAttackIndex: nextAttackPatternIndex, // Store the valid next index
+                  attacks: [], // Clear attacks
+                  showDialogue: true, // Prepare for dialogue
+                  currentLineIndex: 0, // Reset dialogue line index
+                  displayedDialogue: "", // Clear displayed text
               };
           } else {
               // Normal pattern switch
               const nextPattern = ATTACK_PATTERNS[nextAttackPatternIndex];
-              if (!nextPattern) {
+              if (!nextPattern) { // Should not happen due to outer check, but safety.
                   console.error("Next pattern not found at index:", nextAttackPatternIndex);
                   return { ...prev, gamePhase: GamePhase.COMMAND_SELECTION, attacks: [] };
               }
@@ -502,7 +526,7 @@ const App = () => {
               };
           }
       });
-  }, []);
+  }, []); // switchToNextPattern depends only on constants and setGameState
 
    // --- 戦闘開始処理 ---
    const startBattle = useCallback(() => {
@@ -521,18 +545,20 @@ const App = () => {
           return;
       }
 
+      // Clear previous timers before starting new ones
       clearInterval(spawnIntervalRef.current);
+      clearTimeout(nextPatternTimeoutRef.current);
+      clearInterval(attackTimerIntervalRef.current);
+      clearInterval(battleTimerIntervalRef.current);
+
       spawnIntervalRef.current = setInterval(spawnAttack, SPAWN_INTERVAL);
 
       setGameState(prev => {
-          // Ensure currentAttackPatternIndex is valid
           const initialIndex = prev.currentAttackPatternIndex < ATTACK_PATTERNS.length ? prev.currentAttackPatternIndex : 0;
           const pattern = ATTACK_PATTERNS[initialIndex];
           if (pattern) {
                console.log(`現在の攻撃パターン開始: ${pattern.name}, ${pattern.duration}ms後に切り替え`);
-               clearTimeout(nextPatternTimeoutRef.current);
                nextPatternTimeoutRef.current = setTimeout(switchToNextPattern, pattern.duration);
-               // Make sure the index is updated if it was reset
                return {...prev, currentAttackPatternIndex: initialIndex, attackTimer: pattern.duration / 1000 };
           } else {
               console.error("Initial pattern not found at index:", initialIndex);
@@ -540,12 +566,10 @@ const App = () => {
           }
       });
 
-      clearInterval(attackTimerIntervalRef.current);
       attackTimerIntervalRef.current = setInterval(() => {
           setGameState(prev => (prev.gamePhase === GamePhase.BATTLE ? { ...prev, attackTimer: Math.max(0, prev.attackTimer - 1) } : prev));
       }, 1000);
 
-      clearInterval(battleTimerIntervalRef.current);
       battleTimerIntervalRef.current = setInterval(() => {
           setGameState(prev => {
               if (prev.gamePhase !== GamePhase.BATTLE) {
@@ -555,6 +579,7 @@ const App = () => {
               const newTime = prev.battleTimeRemaining - 1;
               if (newTime < 0) {
                   console.log("戦闘時間終了。コマンド選択へ移行。");
+                  // Clear battle-specific timers before changing phase
                   clearInterval(battleTimerIntervalRef.current);
                   clearInterval(spawnIntervalRef.current);
                   clearTimeout(nextPatternTimeoutRef.current);
@@ -564,7 +589,7 @@ const App = () => {
               return { ...prev, battleTimeRemaining: newTime };
           });
       }, 1000);
-  }, [spawnAttack, switchToNextPattern, gameLoop]);
+  }, [spawnAttack, switchToNextPattern, gameLoop]); // gameLoop is needed to restart animation frame
 
 
   // --- Effects ---
@@ -575,8 +600,10 @@ const App = () => {
       return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); };
   }, [handleKeyDown, handleKeyUp]);
 
+  // --- ★★★ 変更点: useEffect の依存配列を修正 ★★★ ---
   // Main Game Phase Logic Controller
   useEffect(() => {
+      // Cleanup function remains the same
       const cleanup = () => {
           clearInterval(spawnIntervalRef.current);
           clearTimeout(nextPatternTimeoutRef.current);
@@ -599,8 +626,9 @@ const App = () => {
       };
 
       console.log(`Phase changed TO ${gamePhase}. Setting up...`);
-      cleanup();
+      cleanup(); // Clean up previous phase's timers first
 
+      // Setup logic based on the new phase
       switch (gamePhase) {
           case GamePhase.PRELOAD:
               stopAudio();
@@ -608,67 +636,67 @@ const App = () => {
           case GamePhase.DIALOGUE:
               lastUpdateTimeRef.current = 0;
               if (!requestRef.current) requestRef.current = requestAnimationFrame(gameLoop);
-              startDialogueSequence();
+              startDialogueSequence(); // Start initial dialogue
               setTimeout(() => battleBoxRef.current?.focus(), 0);
               if (Tone.Transport.state !== 'started' && toneStarted.current) Tone.Transport.start();
               break;
           case GamePhase.INTERMISSION_DIALOGUE:
+              // Keep game loop running for potential player movement (if desired)
               if (!requestRef.current) {
                   lastUpdateTimeRef.current = 0;
                   requestRef.current = requestAnimationFrame(gameLoop);
               }
-              startDialogueSequence();
+              startDialogueSequence(); // Start intermission dialogue
               setTimeout(() => battleBoxRef.current?.focus(), 0);
               break;
           case GamePhase.BATTLE:
-              startBattle();
+              startBattle(); // Setup battle timers, attacks, etc.
               break;
           case GamePhase.COMMAND_SELECTION:
               console.log("Entered COMMAND_SELECTION phase. Waiting for command.");
+              // Ensure BGM keeps playing if it was already started
               if (Tone.Transport.state !== 'started' && toneStarted.current) {
-                  Tone.Transport.start(); // Keep BGM playing
+                  Tone.Transport.start();
               }
+              // No timers or game loop needed here, handled by cleanup/checks
               break;
           case GamePhase.GAMEOVER:
-              stopAudio();
+              stopAudio(); // Stop music
+              // Game loop and timers stopped by cleanup/checks
               break;
           default:
               break;
       }
+
+      // Return the cleanup function to be executed when phase changes or component unmounts
       return cleanup;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gamePhase]); // Removed dependencies like startBattle, stopAudio etc. as they shouldn't trigger re-running the effect directly. Phase change handles setup/cleanup.
+  // ★★★ 変更点: 依存配列に必要な関数を追加 ★★★
+  // gamePhase が変更されたときに、関連するセットアップ関数 (useCallbackでメモ化済) を
+  // 再度正しく参照して実行するために依存配列に含める
+  }, [gamePhase, startBattle, stopAudio, gameLoop, startDialogueSequence]);
 
    // Audio Cleanup on Unmount
    useEffect(() => { return () => { stopAudio(); toneStarted.current = false; }; }, [stopAudio]);
 
    // --- コマンド選択処理 ---
    const handleCommandSelection = useCallback((command) => {
-        // Ensure command selection only happens in the correct phase
         if (gameState.gamePhase !== GamePhase.COMMAND_SELECTION) return;
 
         console.log(`Command selected: ${command}`);
         alert(`「${command}」が選択されました。\n（実際の処理は未実装です）`);
 
         // TODO: Implement logic for each command.
-        // This might involve:
-        // - Calculating damage ('たたかう')
-        // - Showing different dialogue or options ('こうどう')
-        // - Opening an item menu ('アイテム')
-        // - Checking conditions for sparing ('みのがす')
-        // After the command action, transition to the next appropriate phase.
         // Example: Transition back to BATTLE after 'たたかう'
         // setGameState(prev => ({
         //     ...prev,
         //     gamePhase: GamePhase.BATTLE,
-        //     // Reset battle timer and potentially attack patterns
         //     battleTimeRemaining: BATTLE_DURATION_SECONDS,
-        //     currentAttackPatternIndex: 0, // Or continue from where left off?
+        //     currentAttackPatternIndex: 0,
         //     attackTimer: ATTACK_PATTERNS.length > 0 ? ATTACK_PATTERNS[0].duration / 1000 : 0,
-        //     attacks: [], // Clear old attacks if restarting battle phase
+        //     attacks: [],
         // }));
 
-   }, [gameState.gamePhase]); // Dependency ensures the callback gets the latest phase
+   }, [gameState.gamePhase]);
 
 
   // --- Rendering ---
@@ -729,6 +757,4 @@ const App = () => {
   );
 };
 
-// --- ★★★ ここが唯一のデフォルトエクスポートです ★★★ ---
 export default App;
-
