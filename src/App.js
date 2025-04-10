@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Heart } from 'lucide-react';
+// import { Heart } from 'lucide-react'; // ← 不要になったため削除
 import * as Tone from 'tone'; // Namespace import
 
 // ============================================================================
@@ -17,6 +17,8 @@ const BOUNDARY_DAMAGE_INTERVAL = 500; // ms
 const TYPEWRITER_SPEED = 50; // ms
 const DELAY_BETWEEN_LINES = 700; // ms
 const ENEMY_IMAGE_URL = "https://i.imgur.com/RzfyQOV.png";
+// ★★★ 変更点: プレイヤー画像のURL ★★★
+const PLAYER_IMAGE_URL = "https://i.imgur.com/DN1tHyO.png";
 const BATTLE_DURATION_SECONDS = 60; // 戦闘時間 (秒)
 const GASTER_WARN_DURATION = 800; // ms 警告時間
 const GASTER_BEAM_DURATION = 250; // ms ビーム持続時間
@@ -89,7 +91,22 @@ class ErrorBoundary extends React.Component {
 // ============================================================================
 // --- UI サブコンポーネント定義 (UI Sub-Components) ---
 // ============================================================================
-const Player = React.memo(({ position, isInvincible }) => ( <Heart className={`absolute text-red-500 fill-current ${isInvincible ? 'player-invincible' : ''}`} style={{ left: `${position.x}px`, top: `${position.y}px`, width: `${PLAYER_SIZE}px`, height: `${PLAYER_SIZE}px` }} /> ));
+// ★★★ 変更点: Playerコンポーネントで画像を使用 ★★★
+const Player = React.memo(({ position, isInvincible }) => (
+    <img
+        src={PLAYER_IMAGE_URL}
+        alt="Player"
+        className={`absolute ${isInvincible ? 'player-invincible' : ''} pixelated`} // 点滅効果、ドット絵表示
+        style={{
+            left: `${position.x}px`,
+            top: `${position.y}px`,
+            width: `${PLAYER_SIZE}px`,
+            height: `${PLAYER_SIZE}px`
+        }}
+        // 画像読み込み失敗時の代替表示
+        onError={(e) => { e.target.onerror = null; e.target.src=`https://placehold.co/${PLAYER_SIZE}x${PLAYER_SIZE}/FF0000/FFFFFF?text=X`; }}
+    />
+));
 const AttackRenderer = React.memo(({ attack }) => {
     switch(attack.type) {
         case 'gaster_warning': return <div key={attack.id} className="gaster-warning" style={{ left: `${attack.x}px`, top: `${attack.y}px`, width: `${attack.width}px`, height: `${attack.height}px` }}></div>;
@@ -368,80 +385,60 @@ const App = () => {
   // --- Dialogue Sequence Logic ---
   const typeNextLine = useCallback(() => {
       setGameState(prev => {
-          // Ensure we are in a dialogue phase
           if (prev.gamePhase !== GamePhase.DIALOGUE && prev.gamePhase !== GamePhase.INTERMISSION_DIALOGUE) return prev;
 
           const currentLines = prev.gamePhase === GamePhase.INTERMISSION_DIALOGUE ? INTERMISSION_DIALOGUE_LINES : DIALOGUE_LINES;
-          const currentPhase = prev.gamePhase; // Capture phase at the start
+          const currentPhase = prev.gamePhase;
           const lineIndex = prev.currentLineIndex;
 
-          // Check if dialogue sequence is finished
           if (lineIndex >= currentLines.length) {
               if (currentPhase === GamePhase.INTERMISSION_DIALOGUE) {
-                  // Check if there's a valid next attack pattern
                   if (prev.nextAttackIndex === null || ATTACK_PATTERNS.length === 0 || prev.nextAttackIndex >= ATTACK_PATTERNS.length) {
                       console.warn("Intermission finished, but no valid next attack. Transitioning to command selection.");
-                      // Transition to command selection phase
                       return { ...prev, gamePhase: GamePhase.COMMAND_SELECTION, showDialogue: false, attacks: [] };
                   }
-                  // Transition back to BATTLE phase with the stored next attack index
                   return { ...prev, gamePhase: GamePhase.BATTLE, showDialogue: false, currentAttackPatternIndex: prev.nextAttackIndex, nextAttackIndex: null };
-              } else { // Initial dialogue finished
-                  // Transition to BATTLE phase
+              } else {
                   const initPos = { x: BATTLE_BOX_WIDTH / 2 - PLAYER_SIZE / 2, y: BATTLE_BOX_HEIGHT / 2 - PLAYER_SIZE / 2 };
-                  playerPositionRef.current = initPos; // Sync ref immediately
+                  playerPositionRef.current = initPos;
                   return { ...prev, gamePhase: GamePhase.BATTLE, showDialogue: false, battlePlayerPosition: initPos };
               }
           }
 
-          // Get the full text for the current line
           const fullText = currentLines[lineIndex];
           let charIndex = 0;
 
-          // Clear previous intervals/timeouts for typing
           clearInterval(typewriterIntervalRef.current);
           clearTimeout(nextLineTimeoutRef.current);
 
-          // Start typewriter effect for the current line
           typewriterIntervalRef.current = setInterval(() => {
               setGameState(currentInternalState => {
-                  // Stop typing if the game phase changed mid-line
                   if (currentInternalState.gamePhase !== currentPhase) {
                       clearInterval(typewriterIntervalRef.current);
                       return currentInternalState;
                   }
-
-                  // Type next character
                   if (charIndex < fullText.length) {
-                      // Play sound only if adding a character
                       if(currentInternalState.displayedDialogue.length < fullText.length) playTypingSound();
                       const nextDisplayed = fullText.substring(0, charIndex + 1);
                       charIndex++;
                       return { ...currentInternalState, displayedDialogue: nextDisplayed };
                   } else {
-                      // Line finished typing, clear interval and set timeout for next line
                       clearInterval(typewriterIntervalRef.current);
                       nextLineTimeoutRef.current = setTimeout(typeNextLine, DELAY_BETWEEN_LINES);
-                      return currentInternalState; // Return state without changing displayed text yet
+                      return currentInternalState;
                   }
               });
           }, TYPEWRITER_SPEED);
 
-          // Update state to show dialogue box and prepare for the new line (clear previous text)
-          // Increment line index for the *next* call to typeNextLine
           return { ...prev, displayedDialogue: "", showDialogue: true, currentLineIndex: lineIndex + 1 };
       });
-  }, [playTypingSound]); // playTypingSound is stable due to useCallback
+  }, [playTypingSound]);
 
   const startDialogueSequence = useCallback(() => {
-      console.log("Starting dialogue sequence..."); // Debug log
+      console.log("Starting dialogue sequence...");
       clearTimeout(nextLineTimeoutRef.current);
       clearInterval(typewriterIntervalRef.current);
-      // Reset dialogue state and trigger the first line typing
       setGameState(prev => ({ ...prev, currentLineIndex: 0, displayedDialogue: "", showDialogue: true }));
-      // Use a slight delay to ensure state update before calling typeNextLine,
-      // although direct call might be fine with how typeNextLine reads state.
-      // setTimeout(typeNextLine, 0); // Or call directly:
       typeNextLine();
   }, [typeNextLine]);
 
@@ -480,40 +477,35 @@ const App = () => {
           const currentPatternIndex = prev.currentAttackPatternIndex;
           const nextIndexRaw = currentPatternIndex + 1;
 
-          // Check if the last pattern just finished based on index
           if (nextIndexRaw >= ATTACK_PATTERNS.length) {
               console.log("Last attack pattern finished (index check). Letting battle timer handle transition.");
-              // Stop spawning/switching for this pattern, let battle timer run out
               clearInterval(spawnIntervalRef.current);
               clearTimeout(nextPatternTimeoutRef.current);
               clearInterval(attackTimerIntervalRef.current);
-              return prev; // Let battle timer trigger the phase change
+              return prev;
           }
 
           const nextAttackPatternIndex = nextIndexRaw;
 
-          // Check for intermission dialogue (after Gaster Blaster, index 2)
           if (currentPatternIndex === 2) {
-               // Ensure there IS a next pattern after intermission
-              if (nextAttackPatternIndex >= ATTACK_PATTERNS.length) {
-                  // This case should ideally not be reached if the outer check works, but safety first.
-                  console.warn("Intermission dialogue finished, but no more attack patterns. Transitioning to command selection.");
-                  return { ...prev, gamePhase: GamePhase.COMMAND_SELECTION, showDialogue: false, attacks: [] };
+               if (nextAttackPatternIndex >= ATTACK_PATTERNS.length) {
+                  console.warn("Intermission dialogue should trigger, but no more attack patterns after it. Transitioning to command selection directly after dialogue.");
+                  // Setting nextAttackIndex to null will cause transition to COMMAND_SELECTION after dialogue
+                  return { ...prev, gamePhase: GamePhase.INTERMISSION_DIALOGUE, nextAttackIndex: null, attacks: [], showDialogue: true, currentLineIndex: 0, displayedDialogue: "" };
               }
               console.log("攻撃パターン3終了。中間ダイアログへ移行。");
               return {
                   ...prev,
                   gamePhase: GamePhase.INTERMISSION_DIALOGUE,
-                  nextAttackIndex: nextAttackPatternIndex, // Store the valid next index
-                  attacks: [], // Clear attacks
-                  showDialogue: true, // Prepare for dialogue
-                  currentLineIndex: 0, // Reset dialogue line index
-                  displayedDialogue: "", // Clear displayed text
+                  nextAttackIndex: nextAttackPatternIndex,
+                  attacks: [],
+                  showDialogue: true,
+                  currentLineIndex: 0,
+                  displayedDialogue: "",
               };
           } else {
-              // Normal pattern switch
               const nextPattern = ATTACK_PATTERNS[nextAttackPatternIndex];
-              if (!nextPattern) { // Should not happen due to outer check, but safety.
+              if (!nextPattern) {
                   console.error("Next pattern not found at index:", nextAttackPatternIndex);
                   return { ...prev, gamePhase: GamePhase.COMMAND_SELECTION, attacks: [] };
               }
@@ -526,7 +518,7 @@ const App = () => {
               };
           }
       });
-  }, []); // switchToNextPattern depends only on constants and setGameState
+  }, []);
 
    // --- 戦闘開始処理 ---
    const startBattle = useCallback(() => {
@@ -545,7 +537,6 @@ const App = () => {
           return;
       }
 
-      // Clear previous timers before starting new ones
       clearInterval(spawnIntervalRef.current);
       clearTimeout(nextPatternTimeoutRef.current);
       clearInterval(attackTimerIntervalRef.current);
@@ -579,7 +570,6 @@ const App = () => {
               const newTime = prev.battleTimeRemaining - 1;
               if (newTime < 0) {
                   console.log("戦闘時間終了。コマンド選択へ移行。");
-                  // Clear battle-specific timers before changing phase
                   clearInterval(battleTimerIntervalRef.current);
                   clearInterval(spawnIntervalRef.current);
                   clearTimeout(nextPatternTimeoutRef.current);
@@ -589,7 +579,7 @@ const App = () => {
               return { ...prev, battleTimeRemaining: newTime };
           });
       }, 1000);
-  }, [spawnAttack, switchToNextPattern, gameLoop]); // gameLoop is needed to restart animation frame
+  }, [spawnAttack, switchToNextPattern, gameLoop]);
 
 
   // --- Effects ---
@@ -600,10 +590,8 @@ const App = () => {
       return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); };
   }, [handleKeyDown, handleKeyUp]);
 
-  // --- ★★★ 変更点: useEffect の依存配列を修正 ★★★ ---
   // Main Game Phase Logic Controller
   useEffect(() => {
-      // Cleanup function remains the same
       const cleanup = () => {
           clearInterval(spawnIntervalRef.current);
           clearTimeout(nextPatternTimeoutRef.current);
@@ -626,9 +614,8 @@ const App = () => {
       };
 
       console.log(`Phase changed TO ${gamePhase}. Setting up...`);
-      cleanup(); // Clean up previous phase's timers first
+      cleanup();
 
-      // Setup logic based on the new phase
       switch (gamePhase) {
           case GamePhase.PRELOAD:
               stopAudio();
@@ -636,44 +623,35 @@ const App = () => {
           case GamePhase.DIALOGUE:
               lastUpdateTimeRef.current = 0;
               if (!requestRef.current) requestRef.current = requestAnimationFrame(gameLoop);
-              startDialogueSequence(); // Start initial dialogue
+              startDialogueSequence();
               setTimeout(() => battleBoxRef.current?.focus(), 0);
               if (Tone.Transport.state !== 'started' && toneStarted.current) Tone.Transport.start();
               break;
           case GamePhase.INTERMISSION_DIALOGUE:
-              // Keep game loop running for potential player movement (if desired)
               if (!requestRef.current) {
                   lastUpdateTimeRef.current = 0;
                   requestRef.current = requestAnimationFrame(gameLoop);
               }
-              startDialogueSequence(); // Start intermission dialogue
+              startDialogueSequence();
               setTimeout(() => battleBoxRef.current?.focus(), 0);
               break;
           case GamePhase.BATTLE:
-              startBattle(); // Setup battle timers, attacks, etc.
+              startBattle();
               break;
           case GamePhase.COMMAND_SELECTION:
               console.log("Entered COMMAND_SELECTION phase. Waiting for command.");
-              // Ensure BGM keeps playing if it was already started
               if (Tone.Transport.state !== 'started' && toneStarted.current) {
                   Tone.Transport.start();
               }
-              // No timers or game loop needed here, handled by cleanup/checks
               break;
           case GamePhase.GAMEOVER:
-              stopAudio(); // Stop music
-              // Game loop and timers stopped by cleanup/checks
+              stopAudio();
               break;
           default:
               break;
       }
-
-      // Return the cleanup function to be executed when phase changes or component unmounts
       return cleanup;
-  // ★★★ 変更点: 依存配列に必要な関数を追加 ★★★
-  // gamePhase が変更されたときに、関連するセットアップ関数 (useCallbackでメモ化済) を
-  // 再度正しく参照して実行するために依存配列に含める
-  }, [gamePhase, startBattle, stopAudio, gameLoop, startDialogueSequence]);
+  }, [gamePhase, startBattle, stopAudio, gameLoop, startDialogueSequence]); // 依存配列を修正
 
    // Audio Cleanup on Unmount
    useEffect(() => { return () => { stopAudio(); toneStarted.current = false; }; }, [stopAudio]);
@@ -686,7 +664,7 @@ const App = () => {
         alert(`「${command}」が選択されました。\n（実際の処理は未実装です）`);
 
         // TODO: Implement logic for each command.
-        // Example: Transition back to BATTLE after 'たたかう'
+        // Example: Transition back to BATTLE
         // setGameState(prev => ({
         //     ...prev,
         //     gamePhase: GamePhase.BATTLE,
@@ -708,7 +686,7 @@ const App = () => {
             .pixelated { image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges; }
             body { font-family: 'Courier New', Courier, monospace; background-color: black; }
             button:focus, [tabindex="0"]:focus { outline: 2px solid orange; outline-offset: 2px; }
-            .dialogue-container { position: absolute; bottom: -10px; left: 50%; transform: translateX(-50%); width: 180px; z-index: 20; opacity: ${showDialogue && gamePhase !== GamePhase.COMMAND_SELECTION ? 1 : 0}; transition: opacity 0.3s ease-in-out; pointer-events: ${showDialogue ? 'auto' : 'none'}; } /* Hide dialogue during command selection */
+            .dialogue-container { position: absolute; bottom: -10px; left: 50%; transform: translateX(-50%); width: 180px; z-index: 20; opacity: ${showDialogue && gamePhase !== GamePhase.COMMAND_SELECTION ? 1 : 0}; transition: opacity 0.3s ease-in-out; pointer-events: ${showDialogue ? 'auto' : 'none'}; }
             .dialogue-box { background-color: white; color: black; border: 2px solid black; padding: 10px 12px; border-radius: 4px; font-size: 0.9rem; line-height: 1.4; text-align: left; position: relative; box-shadow: 0 2px 4px rgba(0,0,0,0.2); font-family: "Comic Sans MS", sans-serif; min-height: 1.4em; overflow-wrap: break-word; }
             .dialogue-box::after { content: ''; position: absolute; top: -12px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent; border-bottom: 12px solid white; }
             .dialogue-box p::after { content: '_'; font-family: "Comic Sans MS", sans-serif; opacity: ${showDialogue ? 1 : 0}; animation: blink 1s step-end infinite; margin-left: 1px; }
@@ -758,3 +736,4 @@ const App = () => {
 };
 
 export default App;
+
