@@ -1,5 +1,5 @@
-blank_issues_enabled: false
+blank_issues_enabled: true
 contact_links:
-  - name: Supertales Discussions
+  - name: Discussions
     url: https://github.com/bonanza127/Supertales/discussions
-    about: Please ask questions and discuss ideas here
+    about: Please ask questions here
