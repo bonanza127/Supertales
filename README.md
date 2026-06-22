@@ -68,3 +68,4 @@ MIT — see [LICENSE](LICENSE) for details.
 - [Report a bug](https://github.com/bonanza127/Supertales/issues)
 - [Request a feature](https://github.com/bonanza127/Supertales/issues)
 - [Discussions](https://github.com/bonanza127/Supertales/discussions)
+
