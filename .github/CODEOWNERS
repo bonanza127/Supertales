@@ -1,0 +1,11 @@
+# Default owner
+* @bonanza127
+
+# CI/CD workflows
+.github/workflows/ @bonanza127
+
+# Documentation
+*.md @bonanza127
+
+# Core source
+src/ @bonanza127
